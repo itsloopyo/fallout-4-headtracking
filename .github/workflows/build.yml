@@ -1,0 +1,86 @@
+name: Build
+
+on:
+  push:
+    branches: ['**']
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'LICENSE'
+  pull_request:
+    branches: [main]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'LICENSE'
+
+jobs:
+  build:
+    name: Build and Validate
+    runs-on: windows-latest
+    if: ${{ !startsWith(github.event.head_commit.message, 'Release v') }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v3
+
+      # run-install: false - this workspace has zero conda dependencies (pixi is
+      # a task runner only; MSBuild comes from setup-msbuild above). The action's
+      # post-install `pixi list` errors on an empty environment in pixi 0.70+.
+      - name: Setup pixi
+        uses: prefix-dev/setup-pixi@5185adfbffb4bd703da3010310260805d89ebb11 # v0.9.6
+        with:
+          run-install: false
+
+      # Build + package through the SAME command a developer runs locally. All
+      # build logic lives in the pixi task chain (setup -> build-release ->
+      # package); the workflow owns none, so local and CI can't drift.
+      - name: Build and package
+        shell: pwsh
+        run: |
+          pixi run package
+
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "::error::'pixi run package' failed"
+            exit 1
+          }
+
+      # Unzip the installer so upload-artifact doesn't nest a zip in its zip.
+      - name: Stage installer contents for artifact upload
+        shell: pwsh
+        run: |
+          $installerZip = Get-ChildItem release/*-installer.zip -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $installerZip) {
+            Write-Host "::error::No installer ZIP was produced by 'pixi run package'"
+            exit 1
+          }
+
+          $stageDir = "release/artifact-contents"
+          if (Test-Path $stageDir) { Remove-Item -Recurse -Force $stageDir }
+          New-Item -ItemType Directory -Path $stageDir -Force | Out-Null
+
+          Expand-Archive -Path $installerZip.FullName -DestinationPath $stageDir -Force
+          Write-Host "Staged $($installerZip.Name) contents to $stageDir" -ForegroundColor Green
+
+      - name: Compute artifact name from ref
+        id: artifact
+        shell: pwsh
+        run: |
+          $branch = if ($env:GITHUB_HEAD_REF) { $env:GITHUB_HEAD_REF } else { $env:GITHUB_REF_NAME }
+          $sanitized = $branch -replace '[^A-Za-z0-9._-]', '-'
+          $name = "Fallout4HeadTracking-$sanitized"
+          Write-Host "Artifact name: $name" -ForegroundColor Green
+          "name=$name" >> $env:GITHUB_OUTPUT
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ steps.artifact.outputs.name }}
+          path: release/artifact-contents/
+          retention-days: 14
+          if-no-files-found: error

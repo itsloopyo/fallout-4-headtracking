@@ -1,0 +1,58 @@
+[workspace]
+name = "fallout-4-head-tracking"
+version = "0.0.0"
+description = "Head tracking mod for Fallout 4 using CameraUnlock shared library"
+license = "MIT"
+channels = ["conda-forge"]
+platforms = ["win-64"]
+
+[tasks]
+sync = "git submodule update --remote cameraunlock-core"
+
+# No -G: let CMake auto-detect the installed Visual Studio generator. Pinning
+# "Visual Studio 17 2022" broke on CI once the windows runner image moved to
+# VS 2026 (VS 17 absent); auto-detect picks whatever VS the machine has.
+setup = { cmd = """
+    powershell -Command "if (-not (Test-Path 'build')) { cmake -B build -A x64 } else { Write-Host 'Build directory exists, skipping setup' -ForegroundColor Yellow }"
+""" }
+
+update-deps = "powershell -ExecutionPolicy Bypass -File scripts/update-deps.ps1"
+
+# Print a Fallout 4 EXE's PE fingerprint as a paste-ready build profile. First
+# step when a user's log says the VATS gate does not know their build - an
+# asset-only patch moves the Steam buildid without relinking the EXE, in which
+# case the fingerprint is already in the table and there is nothing to do.
+check-fingerprint = "powershell -ExecutionPolicy Bypass -File scripts/check-fingerprint.ps1"
+
+fast-load = "powershell -ExecutionPolicy Bypass -File scripts/fast-load.ps1"
+fast-load-restore = "powershell -ExecutionPolicy Bypass -File scripts/fast-load.ps1 -Restore"
+
+# Native unit tests for the config boundary. Separate build tree, so it never
+# disturbs build/ or bin/.
+test = "powershell -ExecutionPolicy Bypass -File scripts/run-tests.ps1"
+
+build = { cmd = "cmake --build build --config Debug", depends-on = ["setup"] }
+build-release = { cmd = "cmake --build build --config Release", depends-on = ["setup"] }
+
+install = { cmd = "powershell -ExecutionPolicy Bypass -File scripts/deploy.ps1 Release", depends-on = ["build-release"] }
+# /y is mandatory: pixi run allocates no TTY, and the shared uninstall body
+# ends with `if not defined YES_FLAG ( echo. & pause )` - that pause reads an
+# invalid handle and aborts the task.
+uninstall = "scripts\\uninstall.cmd /y"
+
+# No PowerShell variables in an inline pixi cmd: pixi's own shell expands $d
+# to the empty string before powershell.exe ever sees it, and the task dies
+# with "Missing variable name after foreach".
+clean = { cmd = """
+    powershell -Command "if (Test-Path 'build') { Remove-Item 'build' -Recurse -Force }; if (Test-Path 'build-tests') { Remove-Item 'build-tests' -Recurse -Force }; Write-Host 'Build artifacts cleaned' -ForegroundColor Green"
+""" }
+
+clean-all = { cmd = """
+    powershell -Command "if (Test-Path 'build') { Remove-Item 'build' -Recurse -Force }; if (Test-Path 'build-tests') { Remove-Item 'build-tests' -Recurse -Force }; if (Test-Path 'release') { Remove-Item 'release' -Recurse -Force }; Write-Host 'All build artifacts cleaned' -ForegroundColor Green"
+""" }
+
+package = { cmd = "powershell -ExecutionPolicy Bypass -File scripts/package-release.ps1", depends-on = ["build-release"] }
+release = { cmd = "powershell -ExecutionPolicy Bypass -File scripts/release.ps1" }
+show-changelog = { cmd = "powershell -ExecutionPolicy Bypass -File scripts/show-changelog.ps1" }
+
+[dependencies]
