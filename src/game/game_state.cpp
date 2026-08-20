@@ -12,55 +12,104 @@
 namespace Fallout4HT {
 namespace {
 
-// Everything else this mod pins is found at runtime by RTTI or by pattern, so a
-// game patch moves it for free. The VATS flag cannot be: it is a byte in .data
-// with no name, no vtable and no code signature of its own, so it is pinned per
-// build and gated on the PE fingerprint the way the doctrine requires.
+// The targeting menu leaves no camera state to read, so the mod asks the VATS
+// singleton itself. RTTI finds the class on any build and its vtable pointer
+// sits in .data exactly once, which locates the object; the mode field is then
+// an offset into it. That is why nothing here is pinned per build any more - a
+// game patch moves the object and the mod follows it.
 //
-// TimeDateStamp, SizeOfImage and CheckSum together identify one shipped EXE.
-// On no match the gate simply stays off and head tracking behaves as it did
-// before it existed - the pause watchdog still puts the head pose away when the
-// game stops updating, so VATS keeps the right VIEW and only loses the overlay
-// alignment. Reading a byte at a stale address is the one outcome worth
-// avoiding: it could read non-zero for ever and leave tracking silently off.
-struct BuildProfile {
-    const char* name;
-    uint32_t timeDateStamp;
-    uint32_t sizeOfImage;
-    uint32_t checkSum;
-    uintptr_t vatsActiveOffset;
-};
+// The offset was derived by differential search (src/diagnostics/vats_probe.cpp,
+// Ctrl+Shift+V in gameplay and Ctrl+Shift+X in VATS): the byte at +0x7D was the
+// only survivor inside the object, holding 0 through every gameplay sample and a
+// non-zero mode through every VATS one. The Pip-Boy and the pause menu leave it
+// at 0, so it means VATS rather than "a menu is open".
+constexpr uintptr_t kVatsModeOffset = 0x7D;
 
-// Found by differential search, in src/diagnostics/vats_probe.cpp: samples of
-// .data taken alternately in gameplay and in VATS, keeping only the bytes that
-// held one value every time in the first and a different value every time in the
-// second. Six cycles took 16.3 million bytes to 108 flag-shaped survivors, and
-// walking the Pip-Boy and the pause menu separated the ones that mean VATS from
-// the ones that mean "a menu is open". Ctrl+Shift+V / Ctrl+Shift+X re-run it.
-//
-// The date in each name is the EXE's link date, so `pixi run check-fingerprint`
-// prints a line that can be pasted straight in. Newest first.
-const BuildProfile kKnownProfiles[] = {
-    { "steam-win64-20260417", 0x69E2A744, 0x04244000, 0x034C0846, 0x326C129 },
-};
+// The mode is a small enum, not a bool: measured at 1 as the menu opens and 2
+// once it has settled, which is why gameplay is mode == 0 rather than a boolean
+// test. A byte outside this range is not the field this was derived against,
+// whatever else matched, and reading on would leave head tracking switched off
+// with no explanation.
+constexpr uint8_t kMaxVatsMode = 4;
 
-uintptr_t g_vatsFlag = 0;
 std::atomic<bool> g_gateTrusted{false};
 
-// PlayerCamera's VATS state, resolved by RTTI. Zero means it was not found, and
-// the attack-camera half of the gate stays off.
-uintptr_t g_vatsCameraStateVtable = 0;
+// The VATS singleton, found through its RTTI vtable. Zero means it was not
+// resolved, and the targeting-menu half of the gate stays off.
+uintptr_t g_vatsObject = 0;
 
-bool ReadFingerprint(uintptr_t moduleBase, uint32_t& stamp, uint32_t& size, uint32_t& sum) {
+bool FindSection(uintptr_t moduleBase, const char* wanted, uintptr_t& start, size_t& size) {
     const auto* dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(moduleBase);
     if (dos->e_magic != IMAGE_DOS_SIGNATURE) return false;
     const auto* nt = reinterpret_cast<const IMAGE_NT_HEADERS64*>(moduleBase + dos->e_lfanew);
     if (nt->Signature != IMAGE_NT_SIGNATURE) return false;
-    stamp = nt->FileHeader.TimeDateStamp;
-    size = nt->OptionalHeader.SizeOfImage;
-    sum = nt->OptionalHeader.CheckSum;
-    return true;
+    const auto* section = IMAGE_FIRST_SECTION(nt);
+    for (WORD i = 0; i < nt->FileHeader.NumberOfSections; ++i, ++section) {
+        char name[9] = {};
+        std::memcpy(name, section->Name, 8);
+        if (std::strcmp(name, wanted) != 0) continue;
+        start = moduleBase + section->VirtualAddress;
+        size = section->Misc.VirtualSize;
+        return true;
+    }
+    return false;
 }
+
+// Counts every 8-aligned slot in .data holding the vtable, and reports the last
+// one. A global object has exactly one; anything else means this is not the
+// shape assumed here and the address is not to be trusted.
+size_t ScanDataForVtable(uintptr_t dataStart, size_t dataSize, uintptr_t vtable,
+                         uintptr_t& found) {
+    size_t hits = 0;
+    static std::atomic<uint64_t> s_faults{0};
+    __try {
+        for (size_t off = 0; off + sizeof(uintptr_t) <= dataSize; off += 8) {
+            if (*reinterpret_cast<const uintptr_t*>(dataStart + off) != vtable) continue;
+            found = dataStart + off;
+            ++hits;
+        }
+    } __except (SehAbsorbAccessViolation(GetExceptionCode(), "vats singleton scan", s_faults)) {
+    }
+    return hits;
+}
+
+void ResolveVatsSingleton(HMODULE gameModule, uintptr_t moduleBase) {
+    cameraunlock::memory::VtableInfo vtInfo{};
+    if (!cameraunlock::memory::FindVtableFromRTTI(gameModule, kRTTI_VATS, vtInfo, 1)) {
+        Log::Line("WARN: game state: no VATS RTTI - the targeting-menu flag cannot be"
+                  " anchored to the singleton");
+        return;
+    }
+
+    uintptr_t dataStart = 0;
+    size_t dataSize = 0;
+    if (!FindSection(moduleBase, ".data", dataStart, dataSize)) {
+        Log::Line("WARN: game state: no .data section - VATS singleton not resolved");
+        return;
+    }
+
+    uintptr_t found = 0;
+    const size_t hits = ScanDataForVtable(dataStart, dataSize, vtInfo.vtable_address, found);
+    if (hits != 1) {
+        Log::Line("WARN: game state: VATS vtable module+0x%llX appears in .data %zu times,"
+                  " not once - singleton not resolved",
+                  static_cast<unsigned long long>(vtInfo.vtable_address - moduleBase), hits);
+        return;
+    }
+
+    g_vatsObject = found;
+    g_gateTrusted.store(true, std::memory_order_relaxed);
+    Log::Line("game state: VATS singleton at module+0x%llX (vtable module+0x%llX), mode byte"
+              " at +0x%llX - head tracking steps aside for VATS so it frames and labels the"
+              " target, not the head",
+              static_cast<unsigned long long>(found - moduleBase),
+              static_cast<unsigned long long>(vtInfo.vtable_address - moduleBase),
+              static_cast<unsigned long long>(kVatsModeOffset));
+}
+
+// PlayerCamera's VATS state, resolved by RTTI. Zero means it was not found, and
+// the attack-camera half of the gate stays off.
+uintptr_t g_vatsCameraStateVtable = 0;
 
 void ResolveVatsCameraState(HMODULE gameModule) {
     cameraunlock::memory::VtableInfo vtInfo{};
@@ -114,47 +163,8 @@ bool GameState::Initialize() {
     }
 
     ResolveVatsCameraState(gameModule);
+    ResolveVatsSingleton(gameModule, moduleBase);
 
-    uint32_t stamp = 0, size = 0, sum = 0;
-    if (!ReadFingerprint(moduleBase, stamp, size, sum)) {
-        Log::Line("WARN: game state: unreadable PE header - VATS gate off");
-        return false;
-    }
-
-    for (const BuildProfile& profile : kKnownProfiles) {
-        if (profile.timeDateStamp != stamp || profile.sizeOfImage != size ||
-            profile.checkSum != sum) {
-            continue;
-        }
-        // A profile can be added the moment a patch is spotted, before anyone
-        // has re-derived the flag for it. Zero means exactly that, and leaves
-        // the gate off rather than reading the DOS header.
-        if (profile.vatsActiveOffset == 0) {
-            Log::Line("game state: build %s is known but its VATS flag has not been"
-                      " re-derived yet - gate off. Head tracking runs normally; VATS will"
-                      " frame the target but its body-part overlay will sit where the head"
-                      " was looking. Re-derive with Ctrl+Shift+V / Ctrl+Shift+X.",
-                      profile.name);
-            return true;
-        }
-        if (profile.vatsActiveOffset >= moduleSize) {
-            Log::Line("WARN: game state: %s has a VATS offset outside the module - gate off",
-                      profile.name);
-            return false;
-        }
-        g_vatsFlag = moduleBase + profile.vatsActiveOffset;
-        g_gateTrusted.store(true, std::memory_order_relaxed);
-        Log::Line("game state: build %s, VATS flag at module+0x%llX - head tracking"
-                  " steps aside for VATS so it frames and labels the target, not the head",
-                  profile.name, static_cast<unsigned long long>(profile.vatsActiveOffset));
-        return true;
-    }
-
-    Log::Line("game state: this Fallout 4 is not a build the VATS gate knows"
-              " (TimeDateStamp 0x%08X, SizeOfImage 0x%08X, CheckSum 0x%08X). Head tracking"
-              " runs normally; VATS will frame the target but its body-part overlay will"
-              " sit where the head was looking. Re-derive with Ctrl+Shift+V / Ctrl+Shift+X.",
-              stamp, size, sum);
     return true;
 }
 
@@ -164,32 +174,32 @@ bool GameState::IsInGameplay(void* playerCamera) {
 
     static std::atomic<uint64_t> s_faults{0};
     __try {
-        const uint8_t value = *reinterpret_cast<const volatile uint8_t*>(g_vatsFlag);
-        // A boolean that is neither 0 nor 1 is not the flag this was pinned to,
-        // whatever the fingerprint said. Standing down beats leaving head
-        // tracking switched off for the rest of the session with no explanation.
-        if (value > 1) {
+        const uint8_t mode = *reinterpret_cast<const volatile uint8_t*>(
+            g_vatsObject + kVatsModeOffset);
+        if (mode > kMaxVatsMode) {
             g_gateTrusted.store(false, std::memory_order_relaxed);
-            Log::Line("WARN: game state: the VATS flag read %u, which is not a boolean -"
-                      " gate off for this session, head tracking active in all states",
-                      value);
+            Log::Line("WARN: game state: the VATS mode byte read %u, which is outside the"
+                      " range this was derived against - gate off for this session, head"
+                      " tracking active in all states. Re-derive with Ctrl+Shift+V /"
+                      " Ctrl+Shift+X.", mode);
             return true;
         }
-        // Every change is logged. A byte found by differential search can
-        // correlate perfectly in one session and mean something else after a
-        // save is loaded, and a gate that silently sticks would switch head
-        // tracking off for the rest of the session with no explanation.
+        // Every change is logged. The field is read from an object found at
+        // runtime, so a patch that reorders the class would show up here as a
+        // mode that changes at the wrong moments rather than as silence.
         static std::atomic<int> s_last{-1};
-        const int previous = s_last.exchange(value, std::memory_order_relaxed);
-        if (previous != value) {
-            Log::Line("game state: VATS flag %d -> %u, head tracking %s", previous, value,
-                      value == 0 ? "on" : "off so VATS frames and labels the target");
+        const int previous = s_last.exchange(mode, std::memory_order_relaxed);
+        if (previous != mode) {
+            Log::Line("game state: VATS mode %d -> %u, head tracking %s", previous, mode,
+                      mode == 0 ? "on" : "off so VATS frames and labels the target");
         }
-        return value == 0;
-    } __except (SehAbsorbAccessViolation(GetExceptionCode(), "vats flag", s_faults)) {
+        return mode == 0;
+    } __except (SehAbsorbAccessViolation(GetExceptionCode(), "vats mode", s_faults)) {
         g_gateTrusted.store(false, std::memory_order_relaxed);
     }
     return true;
 }
+
+uintptr_t VatsSingletonAddress() { return g_vatsObject; }
 
 } // namespace Fallout4HT

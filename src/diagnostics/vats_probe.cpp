@@ -4,6 +4,8 @@
 #include "vats_probe.h"
 #include "core/logging.h"
 #include "core/seh_guard.h"
+#include "diagnostics/frame_verdict.h"
+#include "game/game_state.h"
 
 #include <cameraunlock/memory/pattern_scanner.h>
 
@@ -41,6 +43,21 @@ bool FindData(uintptr_t moduleBase) {
         return true;
     }
     return false;
+}
+
+// How far past the VATS singleton's address a candidate may sit and still be
+// treated as part of the object. The class is nowhere near this big; the window
+// is deliberately loose because the point is to see whether the flag is in the
+// object at all, and the exact size is not known until it is.
+constexpr uintptr_t kVatsObjectWindow = 0x1000;
+
+// Static buffer rather than a return by value: this runs inside the __try of
+// the sampler, where MSVC will not accept a type with a destructor.
+const char* FormatVatsOffset(uintptr_t delta) {
+    static char buffer[48];
+    std::snprintf(buffer, sizeof(buffer), " (VATS singleton + 0x%llX)",
+                  static_cast<unsigned long long>(delta));
+    return buffer;
 }
 
 size_t CountAlive() {
@@ -93,28 +110,46 @@ void ProbeVatsSample(bool inVats) {
             ++g_vatsSamples;
         }
 
+        // Whether the game thread was running when the sample was taken, so a
+        // mislabelled sample can be spotted afterwards rather than quietly
+        // poisoning the search. VATS freezes the game update; gameplay does not.
+        unsigned long long ticks = 0, sinceMs = 0;
+        GetCameraTickLiveness(ticks, sinceMs);
+
         const size_t alive = CountAlive();
-        Log::Line("vats probe: %d gameplay + %d VATS samples -> %zu candidate byte(s)",
-                  g_gameplaySamples, g_vatsSamples, alive);
+        Log::Line("vats probe: %d gameplay + %d VATS samples -> %zu candidate byte(s)"
+                  " (last camera tick %llu ms ago, game %s)",
+                  g_gameplaySamples, g_vatsSamples, alive, sinceMs,
+                  sinceMs >= 40 ? "FROZEN" : "running");
 
         // A mode flag holds a small value - 0 in gameplay, 1 or 2 in VATS - so
         // the survivors worth looking at are the ones shaped like one. Counters
         // and pointers survive the alternation just as well and swamp the list.
         if (g_vatsSamples >= 2) {
+            // A candidate inside the VATS singleton is worth more than one that
+            // is not: an offset into an object found by RTTI reads the same on
+            // every build, while a raw .data address has to be re-derived after
+            // every patch. So those are listed in full and the rest are capped.
+            const uintptr_t vats = VatsSingletonAddress();
             int shown = 0;
             size_t flagLike = 0;
+            size_t inObject = 0;
             for (size_t i = 0; i < g_dataSize; ++i) {
                 if (!g_alive[i]) continue;
                 if (g_inGameplay[i] > 4 || g_inVats[i] > 4) continue;
                 ++flagLike;
-                if (shown < 30) {
-                    ++shown;
-                    Log::Line("  flag-shaped candidate module+0x%llX: gameplay %02X, VATS %02X",
-                              static_cast<unsigned long long>(g_dataStart + i - moduleBase),
-                              g_inGameplay[i], g_inVats[i]);
-                }
+                const uintptr_t addr = g_dataStart + i;
+                const bool nearVats = vats != 0 && addr >= vats && addr < vats + kVatsObjectWindow;
+                if (nearVats) ++inObject;
+                if (!nearVats && shown >= 30) continue;
+                if (!nearVats) ++shown;
+                Log::Line("  flag-shaped candidate module+0x%llX%s: gameplay %02X, VATS %02X",
+                          static_cast<unsigned long long>(addr - moduleBase),
+                          nearVats ? FormatVatsOffset(addr - vats) : "",
+                          g_inGameplay[i], g_inVats[i]);
             }
-            Log::Line("  %zu of %zu candidates are flag-shaped", flagLike, alive);
+            Log::Line("  %zu of %zu candidates are flag-shaped, %zu of them inside the VATS"
+                      " singleton", flagLike, alive, inObject);
         }
     } __except (SehAbsorbAccessViolation(GetExceptionCode(), "vats probe", s_faults)) {
     }

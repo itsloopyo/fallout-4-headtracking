@@ -31,7 +31,6 @@ public:
     void SetEnabled(bool enabled);
     void Toggle();
 
-    void Recenter();
     void CycleDofMode();
     void ToggleYawMode();
 
@@ -102,6 +101,12 @@ private:
     // The single place that setting is consulted.
     void Notify(const char* message) const;
 
+    // The session itself re-reads the receiver's connection locality each
+    // update and points both processors at LocalSmoothing or RemoteSmoothing.
+    // This only reports the switch, so a bug report can say which of the two
+    // values was actually in effect.
+    void LogConnectionLocality();
+
     // Frame dt is clamped to this ceiling so a stall (alt-tab, load hitch)
     // cannot feed a huge dt into the smoothing/extrapolation math.
     static constexpr float kMaxFrameDtSeconds = 0.1f;
@@ -115,7 +120,16 @@ private:
     Config m_config;
     cameraunlock::UdpReceiver m_udpReceiver;
     cameraunlock::HeadTrackingSession<cameraunlock::UdpReceiver> m_session{m_udpReceiver};
+    // Without IsRemoteConnection() on the receiver the session silently falls
+    // back to LocalSmoothing forever, with nothing at the call site to show it.
+    static_assert(decltype(m_session)::kHasRemoteConnection,
+                  "receiver must expose IsRemoteConnection() or remote smoothing never applies");
     cameraunlock::time::FrameClock m_frameClock{kMaxFrameDtSeconds};
+
+    // Last connection locality reported to the log, so the line is emitted on a
+    // change rather than every frame.
+    bool m_remoteConnection = false;
+    bool m_remoteConnectionKnown = false;
 
     Hotkeys m_hotkeys;
 
@@ -145,7 +159,6 @@ private:
     static constexpr uint64_t kSecondSourceWarnIntervalMs = 30000;
     uint64_t m_lastSecondSourceWarnMs = 0;
     bool m_warnedSecondSource = false;
-    uint64_t m_reportedRemoteRecenters = 0;
 };
 
 } // namespace Fallout4HT

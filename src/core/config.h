@@ -20,15 +20,16 @@ struct Config {
     float pitchMultiplier = 1.0f;
     float rollMultiplier = 1.0f;
 
-    // Rotation smoothing factor. 0.0 = minimal (a 0.15 baseline floor is still
-    // applied internally - see cameraunlock-core SmoothingUtils). Push above
-    // 0.0 only if your tracker is jittery; pushing higher trades crispness for
-    // noise rejection.
-    float rotationSmoothing = 0.0f;
+    // Smoothing is picked per connection from the packet's source address, and
+    // both values cover rotation and position alike. A tracker running on this
+    // machine needs none of it - localSmoothing is 0.0 and nothing floors it -
+    // while a phone on WiFi jitters over the network, which is what
+    // remoteSmoothing is for. Higher trades crispness for noise rejection.
+    float localSmoothing = 0.0f;
+    float remoteSmoothing = 0.15f;
 
     // Hotkeys (Virtual Key codes)
     int toggleKey = DEFAULT_TOGGLE_KEY;
-    int recenterKey = DEFAULT_RECENTER_KEY;
     int positionToggleKey = DEFAULT_POSITION_TOGGLE_KEY;
     int yawModeKey = DEFAULT_YAW_MODE_KEY;
 
@@ -40,7 +41,6 @@ struct Config {
     float positionLimitY = 0.20f;
     float positionLimitZ = 0.40f;
     float positionLimitZBack = 0.10f;
-    float positionSmoothing = 0.15f;
     // X stays inverted: a phone tracker looks at the player through its front
     // camera, so its x runs the other way round, which is what this setting is
     // for. Its limit is symmetric, so inverting costs nothing.

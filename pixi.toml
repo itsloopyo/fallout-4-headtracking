@@ -18,12 +18,6 @@ setup = { cmd = """
 
 update-deps = "powershell -ExecutionPolicy Bypass -File scripts/update-deps.ps1"
 
-# Print a Fallout 4 EXE's PE fingerprint as a paste-ready build profile. First
-# step when a user's log says the VATS gate does not know their build - an
-# asset-only patch moves the Steam buildid without relinking the EXE, in which
-# case the fingerprint is already in the table and there is nothing to do.
-check-fingerprint = "powershell -ExecutionPolicy Bypass -File scripts/check-fingerprint.ps1"
-
 fast-load = "powershell -ExecutionPolicy Bypass -File scripts/fast-load.ps1"
 fast-load-restore = "powershell -ExecutionPolicy Bypass -File scripts/fast-load.ps1 -Restore"
 

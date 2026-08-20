@@ -28,7 +28,8 @@ void Config::Validate() {
     pitchMultiplier = SanitizeFinite(pitchMultiplier, defaults.pitchMultiplier, 0.1f, 5.0f);
     rollMultiplier = SanitizeFinite(rollMultiplier, defaults.rollMultiplier, 0.0f, 2.0f);
 
-    rotationSmoothing = SanitizeFinite(rotationSmoothing, defaults.rotationSmoothing, 0.0f, 0.99f);
+    localSmoothing = SanitizeFinite(localSmoothing, defaults.localSmoothing, 0.0f, 1.0f);
+    remoteSmoothing = SanitizeFinite(remoteSmoothing, defaults.remoteSmoothing, 0.0f, 1.0f);
 
     positionSensitivityX = SanitizeFinite(positionSensitivityX, defaults.positionSensitivityX, 0.1f, 10.0f);
     positionSensitivityY = SanitizeFinite(positionSensitivityY, defaults.positionSensitivityY, 0.1f, 10.0f);
@@ -38,8 +39,29 @@ void Config::Validate() {
     positionLimitY = SanitizeFinite(positionLimitY, defaults.positionLimitY, 0.01f, 2.0f);
     positionLimitZ = SanitizeFinite(positionLimitZ, defaults.positionLimitZ, 0.01f, 2.0f);
     positionLimitZBack = SanitizeFinite(positionLimitZBack, defaults.positionLimitZBack, 0.01f, 2.0f);
+}
 
-    positionSmoothing = SanitizeFinite(positionSmoothing, defaults.positionSmoothing, 0.0f, 0.99f);
+// Warned once per process rather than once per load: config is reloadable, and
+// repeating this on every reload buries it.
+//
+// The old value is deliberately NOT migrated into the new keys. The single
+// smoothing value carried a hidden 0.15 floor, so the number in an existing
+// config does not mean what it used to: copying it across would hand a local
+// user smoothing they never chose under the new semantics, and copying it into
+// only one of the two keys would be a guess about which connection they were on.
+static void WarnRetiredSmoothingKey(const cameraunlock::IniReader& reader,
+                                    const char* section, const char* key) {
+    static bool warned = false;
+    if (warned) return;
+    if (reader.ReadString(section, key, "").empty()) return;
+    warned = true;
+    Log::Line(
+        "WARN: Config key [%s] %s has been retired and is IGNORED. Smoothing is now two "
+        "keys: LocalSmoothing (default 0, applies to a tracker on this machine) and "
+        "RemoteSmoothing (default 0.15, applies to a tracker on the network). The "
+        "old value is not migrated because the semantics changed - it carried a "
+        "hidden 0.15 floor that no longer exists. Set the two new keys.",
+        section, key);
 }
 
 bool Config::Load(const char* path) {
@@ -66,10 +88,12 @@ bool Config::Load(const char* path) {
     yawMultiplier = ini.ReadFloat("Sensitivity", "YawMultiplier", yawMultiplier);
     pitchMultiplier = ini.ReadFloat("Sensitivity", "PitchMultiplier", pitchMultiplier);
     rollMultiplier = ini.ReadFloat("Sensitivity", "RollMultiplier", rollMultiplier);
-    rotationSmoothing = ini.ReadFloat("Sensitivity", "RotationSmoothing", rotationSmoothing);
+    localSmoothing = ini.ReadFloat("Sensitivity", "LocalSmoothing", localSmoothing);
+    remoteSmoothing = ini.ReadFloat("Sensitivity", "RemoteSmoothing", remoteSmoothing);
+    WarnRetiredSmoothingKey(ini, "Sensitivity", "RotationSmoothing");
+    WarnRetiredSmoothingKey(ini, "Position", "Smoothing");
 
     toggleKey = ini.ReadHex("Hotkeys", "ToggleKey", toggleKey);
-    recenterKey = ini.ReadHex("Hotkeys", "RecenterKey", recenterKey);
     positionToggleKey = ini.ReadHex("Hotkeys", "PositionToggleKey", positionToggleKey);
     yawModeKey = ini.ReadHex("Hotkeys", "YawModeKey", yawModeKey);
 
@@ -80,7 +104,6 @@ bool Config::Load(const char* path) {
     positionLimitY = ini.ReadFloat("Position", "LimitY", positionLimitY);
     positionLimitZ = ini.ReadFloat("Position", "LimitZ", positionLimitZ);
     positionLimitZBack = ini.ReadFloat("Position", "LimitZBack", positionLimitZBack);
-    positionSmoothing = ini.ReadFloat("Position", "Smoothing", positionSmoothing);
     positionInvertX = ini.ReadBool("Position", "InvertX", positionInvertX);
     positionInvertY = ini.ReadBool("Position", "InvertY", positionInvertY);
     positionInvertZ = ini.ReadBool("Position", "InvertZ", positionInvertZ);
@@ -116,9 +139,12 @@ bool Config::Save(const char* path) const {
     w.WriteDouble("YawMultiplier", yawMultiplier);
     w.WriteDouble("PitchMultiplier", pitchMultiplier);
     w.WriteDouble("RollMultiplier", rollMultiplier);
-    w.WriteComment("Rotation smoothing (0.0 = snappy, internal 0.15 floor still applied;");
-    w.WriteComment("raise toward 1.0 for noisier trackers - costs perceived latency)");
-    w.WriteDouble("RotationSmoothing", rotationSmoothing);
+    w.WriteComment("Smoothing applied when the tracker runs on this machine (loopback).");
+    w.WriteComment("0 = no smoothing, 1 = heavy. Covers rotation and position.");
+    w.WriteDouble("LocalSmoothing", localSmoothing);
+    w.WriteComment("Smoothing applied when the tracker is a remote device on the network.");
+    w.WriteComment("0 = no smoothing, 1 = heavy. Covers rotation and position.");
+    w.WriteDouble("RemoteSmoothing", remoteSmoothing);
     w.WriteBlankLine();
 
     w.WriteSection("Position");
@@ -132,8 +158,6 @@ bool Config::Save(const char* path) const {
     w.WriteDouble("LimitZ", positionLimitZ);
     w.WriteComment("Backward lean limit (prevents camera clipping through player model)");
     w.WriteDouble("LimitZBack", positionLimitZBack);
-    w.WriteComment("Smoothing factor (0.0 = none, 0.99 = maximum)");
-    w.WriteDouble("Smoothing", positionSmoothing);
     w.WriteComment("Invert position axes");
     w.WriteBool("InvertX", positionInvertX);
     w.WriteBool("InvertY", positionInvertY);
@@ -144,10 +168,9 @@ bool Config::Save(const char* path) const {
 
     w.WriteSection("Hotkeys");
     w.WriteComment("Virtual key codes (hex)");
-    w.WriteComment("ToggleKey: End - Enable/disable. RecenterKey: Home - Recenter view.");
+    w.WriteComment("ToggleKey: End - Enable/disable tracking.");
     w.WriteComment("PositionToggleKey: Page Up - Toggle position. YawModeKey: Page Down - World/local yaw.");
     w.WriteHex("ToggleKey", toggleKey);
-    w.WriteHex("RecenterKey", recenterKey);
     w.WriteHex("PositionToggleKey", positionToggleKey);
     w.WriteHex("YawModeKey", yawModeKey);
     w.WriteBlankLine();

@@ -87,20 +87,29 @@ float SignedDelta(float a, float b) {
     return d;
 }
 
-// One SHOT line a second at most. An automatic weapon would otherwise fill the
-// log faster than it can be read, and the question these lines answer - does the
-// launch follow the body or the head - is settled by any one of them.
+// One SHOT line and one BAD SHOT line a second at most. An automatic weapon
+// would otherwise fill the log faster than it can be read, and the question
+// these lines answer - does the launch follow the body or the head - is settled
+// by any one of them.
 constexpr uint64_t kLaunchReportIntervalMs = 1000;
+
+bool LaunchReportDue(std::atomic<uint64_t>& lastReportMs) {
+    const uint64_t nowMs = GetTickCount64();
+    if (nowMs - lastReportMs.load(std::memory_order_relaxed) < kLaunchReportIntervalMs) {
+        return false;
+    }
+    lastReportMs.store(nowMs, std::memory_order_relaxed);
+    return true;
+}
 
 void ReportLaunch(void* launchData) {
     static std::atomic<uint64_t> s_lastReportMs{0};
-    const uint64_t nowMs = GetTickCount64();
-    const uint64_t last = s_lastReportMs.load(std::memory_order_relaxed);
-    if (nowMs - last < kLaunchReportIntervalMs) return;
-    s_lastReportMs.store(nowMs, std::memory_order_relaxed);
 
     CameraRootSnapshots snap{};
     if (!GetCameraRootSnapshots(snap) || snap.cameraRoot == 0) return;
+    // Gated after the snapshot read so a frame without snapshots does not consume
+    // the interval the next reportable shot needs.
+    if (!LaunchReportDue(s_lastReportMs)) return;
 
     static std::atomic<uint64_t> s_faults{0};
     __try {
@@ -145,6 +154,7 @@ void ReportCameraSeenByLaunch() {
     if (!GetCameraRootSnapshots(snap) || snap.cameraRoot == 0 || snap.niCamera == 0) return;
 
     static std::atomic<uint64_t> s_faults{0};
+    static std::atomic<uint64_t> s_lastBadReportMs{0};
     __try {
         const NiMatrix33* rootLive = WorldRotationOf(snap.cameraRoot);
         const NiMatrix33* camLive = WorldRotationOf(snap.niCamera);
@@ -157,6 +167,9 @@ void ReportCameraSeenByLaunch() {
         const bool rootFollowsHead = rootToTracked < rootToClean;
         const bool camFollowsHead = camToTracked < camToClean;
         if (!rootFollowsHead && !camFollowsHead) return;   // both body-aimed, nothing to say
+        // Gated here rather than on entry so a body-aimed shot does not consume
+        // the interval that the next bad one needs.
+        if (!LaunchReportDue(s_lastBadReportMs)) return;
         Log::Line("BAD SHOT: the camera the launch reads still carries the head pose -"
                   " cameraRoot %s (%.2f deg from body, %.2f from head), niCamera %s"
                   " (%.2f from body, %.2f from head), head is %.2f deg off. This shot"

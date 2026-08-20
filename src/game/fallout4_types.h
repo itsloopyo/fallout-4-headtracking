@@ -124,6 +124,10 @@ constexpr const char* kRTTI_PlayerCharacter  = "PlayerCharacter";
 // the targeting menu, which changes no camera state at all, this one is a state
 // swap the mod can see, so the gate for it needs nothing pinned per build.
 constexpr const char* kRTTI_VATSCameraState  = "VATSCameraState";
+// The VATS singleton itself. It is a global object, so its vtable pointer sits
+// in .data and finding it there anchors the targeting-menu flag to an object
+// rather than to a raw address a patch moves.
+constexpr const char* kRTTI_VATS             = "VATS";
 
 // Actor::Update, from CommonLibF4 (Skyrim uses 0xAD). The player's update is
 // where gameplay reads the camera - interaction raycasts and, in third person,

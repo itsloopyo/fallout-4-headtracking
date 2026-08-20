@@ -60,12 +60,12 @@ void WriteFileText(const std::string& path, const char* body) {
 
 bool AllFinite(const Config& c) {
     return std::isfinite(c.yawMultiplier) && std::isfinite(c.pitchMultiplier)
-        && std::isfinite(c.rollMultiplier) && std::isfinite(c.rotationSmoothing)
+        && std::isfinite(c.rollMultiplier)
+        && std::isfinite(c.localSmoothing) && std::isfinite(c.remoteSmoothing)
         && std::isfinite(c.positionSensitivityX) && std::isfinite(c.positionSensitivityY)
         && std::isfinite(c.positionSensitivityZ)
         && std::isfinite(c.positionLimitX) && std::isfinite(c.positionLimitY)
-        && std::isfinite(c.positionLimitZ) && std::isfinite(c.positionLimitZBack)
-        && std::isfinite(c.positionSmoothing);
+        && std::isfinite(c.positionLimitZ) && std::isfinite(c.positionLimitZBack);
 }
 
 void ValidateRejectsNonFinite() {
@@ -76,7 +76,8 @@ void ValidateRejectsNonFinite() {
     c.yawMultiplier = kNan;
     c.pitchMultiplier = kInf;
     c.rollMultiplier = -kInf;
-    c.rotationSmoothing = kNan;
+    c.localSmoothing = kNan;
+    c.remoteSmoothing = kInf;
     c.positionSensitivityX = kInf;
     c.positionSensitivityY = kNan;
     c.positionSensitivityZ = -kInf;
@@ -84,17 +85,16 @@ void ValidateRejectsNonFinite() {
     c.positionLimitY = kInf;
     c.positionLimitZ = kNan;
     c.positionLimitZBack = -kInf;
-    c.positionSmoothing = kNan;
     c.Validate();
 
     Check(AllFinite(c), "every float is finite after Validate");
     Check(c.yawMultiplier == defaults.yawMultiplier, "NaN yaw -> default");
     Check(c.pitchMultiplier == defaults.pitchMultiplier, "+Inf pitch -> default");
     Check(c.rollMultiplier == defaults.rollMultiplier, "-Inf roll -> default");
-    Check(c.rotationSmoothing == defaults.rotationSmoothing, "NaN rotation smoothing -> default");
+    Check(c.localSmoothing == defaults.localSmoothing, "NaN local smoothing -> default");
+    Check(c.remoteSmoothing == defaults.remoteSmoothing, "Inf remote smoothing -> default");
     Check(c.positionSensitivityX == defaults.positionSensitivityX, "Inf position sensitivity -> default");
     Check(c.positionLimitZ == defaults.positionLimitZ, "NaN position limit -> default");
-    Check(c.positionSmoothing == defaults.positionSmoothing, "NaN position smoothing -> default");
 }
 
 void ValidateClampsFiniteOutOfRange() {
@@ -104,17 +104,17 @@ void ValidateClampsFiniteOutOfRange() {
     c.yawMultiplier = 99.0f;
     c.pitchMultiplier = 0.0f;
     c.rollMultiplier = -3.0f;
-    c.rotationSmoothing = 5.0f;
+    c.localSmoothing = 5.0f;
+    c.remoteSmoothing = -1.0f;
     c.positionLimitZ = 1.0e30f;
-    c.positionSmoothing = -1.0f;
     c.Validate();
 
     Check(c.yawMultiplier == 5.0f, "yaw clamps to 5.0");
     Check(c.pitchMultiplier == 0.1f, "pitch clamps to 0.1");
     Check(c.rollMultiplier == 0.0f, "roll clamps to 0.0");
-    Check(c.rotationSmoothing == 0.99f, "rotation smoothing clamps to 0.99");
+    Check(c.localSmoothing == 1.0f, "local smoothing clamps to 1.0");
+    Check(c.remoteSmoothing == 0.0f, "remote smoothing clamps to 0.0");
     Check(c.positionLimitZ == 2.0f, "position limit clamps to 2.0");
-    Check(c.positionSmoothing == 0.0f, "position smoothing clamps to 0.0");
 }
 
 void ValidateLeavesGoodValuesAlone() {
@@ -124,19 +124,19 @@ void ValidateLeavesGoodValuesAlone() {
     c.yawMultiplier = 1.5f;
     c.pitchMultiplier = 0.8f;
     c.rollMultiplier = 0.5f;
-    c.rotationSmoothing = 0.3f;
+    c.localSmoothing = 0.3f;
+    c.remoteSmoothing = 0.4f;
     c.positionSensitivityZ = 2.0f;
     c.positionLimitY = 0.25f;
-    c.positionSmoothing = 0.4f;
     c.Validate();
 
     Check(c.yawMultiplier == 1.5f, "in-range yaw survives");
     Check(c.pitchMultiplier == 0.8f, "in-range pitch survives");
     Check(c.rollMultiplier == 0.5f, "in-range roll survives");
-    Check(c.rotationSmoothing == 0.3f, "in-range smoothing survives");
+    Check(c.localSmoothing == 0.3f, "in-range local smoothing survives");
+    Check(c.remoteSmoothing == 0.4f, "in-range remote smoothing survives");
     Check(c.positionSensitivityZ == 2.0f, "in-range position sensitivity survives");
     Check(c.positionLimitY == 0.25f, "in-range position limit survives");
-    Check(c.positionSmoothing == 0.4f, "in-range position smoothing survives");
 }
 
 // strtod, which IniReader parses floats with, accepts "nan" and "inf" and
@@ -152,7 +152,8 @@ void LoadSanitizesHostileIni() {
         "YawMultiplier=nan\r\n"
         "PitchMultiplier=inf\r\n"
         "RollMultiplier=-inf\r\n"
-        "RotationSmoothing=1e400\r\n"
+        "LocalSmoothing=1e400\r\n"
+        "RemoteSmoothing=nan\r\n"
         "[Position]\r\n"
         "SensitivityX=nan\r\n"
         "SensitivityY=1e400\r\n"
@@ -160,8 +161,7 @@ void LoadSanitizesHostileIni() {
         "LimitX=nan\r\n"
         "LimitY=inf\r\n"
         "LimitZ=1e400\r\n"
-        "LimitZBack=nan\r\n"
-        "Smoothing=nan\r\n");
+        "LimitZBack=nan\r\n");
 
     const Config defaults{};
     Config c;
@@ -169,7 +169,8 @@ void LoadSanitizesHostileIni() {
     Check(AllFinite(c), "no non-finite value survives Load");
     Check(c.udpPort == defaults.udpPort, "out-of-range UDP port keeps the default");
     Check(c.yawMultiplier >= 0.1f && c.yawMultiplier <= 5.0f, "yaw lands in range");
-    Check(c.rotationSmoothing >= 0.0f && c.rotationSmoothing <= 0.99f, "smoothing lands in range");
+    Check(c.localSmoothing >= 0.0f && c.localSmoothing <= 1.0f, "local smoothing lands in range");
+    Check(c.remoteSmoothing >= 0.0f && c.remoteSmoothing <= 1.0f, "remote smoothing lands in range");
     Check(c.positionLimitZ >= 0.01f && c.positionLimitZ <= 2.0f, "position limit lands in range");
 
     DeleteFileA(path.c_str());
@@ -197,7 +198,8 @@ void SaveLoadRoundTrip() {
     Config out;
     out.udpPort = 5555;
     out.yawMultiplier = 1.25f;
-    out.rotationSmoothing = 0.5f;
+    out.localSmoothing = 0.5f;
+    out.remoteSmoothing = 0.25f;
     out.positionLimitZ = 0.6f;
     out.positionEnabled = false;
     out.worldSpaceYaw = false;
@@ -208,7 +210,8 @@ void SaveLoadRoundTrip() {
     Check(back.Load(path.c_str()), "Load reads it back");
     Check(back.udpPort == 5555, "port round trips");
     Check(std::fabs(back.yawMultiplier - 1.25f) < 1e-4f, "yaw multiplier round trips");
-    Check(std::fabs(back.rotationSmoothing - 0.5f) < 1e-4f, "smoothing round trips");
+    Check(std::fabs(back.localSmoothing - 0.5f) < 1e-4f, "local smoothing round trips");
+    Check(std::fabs(back.remoteSmoothing - 0.25f) < 1e-4f, "remote smoothing round trips");
     Check(std::fabs(back.positionLimitZ - 0.6f) < 1e-4f, "position limit round trips");
     Check(back.positionEnabled == false, "position enabled round trips");
     Check(back.worldSpaceYaw == false, "yaw mode round trips");

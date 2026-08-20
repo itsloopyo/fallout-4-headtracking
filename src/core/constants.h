@@ -27,7 +27,6 @@ inline constexpr float RAD_TO_DEG = 57.2957795f;
 
 // Default hotkey virtual key codes
 inline constexpr int DEFAULT_TOGGLE_KEY = 0x23;          // VK_END - Enable/disable tracking
-inline constexpr int DEFAULT_RECENTER_KEY = 0x24;         // VK_HOME - Recenter view
 inline constexpr int DEFAULT_POSITION_TOGGLE_KEY = 0x21;  // VK_PRIOR (Page Up) - Cycle tracking mode
 inline constexpr int DEFAULT_YAW_MODE_KEY = 0x22;         // VK_NEXT (Page Down) - Toggle world/local yaw
 

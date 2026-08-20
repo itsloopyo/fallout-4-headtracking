@@ -28,13 +28,11 @@ bool Hotkeys::Start(const Config& cfg) {
     // Ctrl+Shift chord is held - the chord path is then the sole trigger and a
     // single keypress can't fire two actions.
     m_poller.AddHotkey(cfg.toggleKey, NavGuarded([] { Mod::Instance().Toggle(); }));
-    m_poller.AddHotkey(cfg.recenterKey, NavGuarded([] { Mod::Instance().Recenter(); }));
     m_poller.AddHotkey(cfg.positionToggleKey, NavGuarded([] { Mod::Instance().CycleDofMode(); }));
     m_poller.AddHotkey(cfg.yawModeKey, NavGuarded([] { Mod::Instance().ToggleYawMode(); }));
 
-    // Chord aliases: Ctrl+Shift+T/Y/G/H
+    // Chord aliases: Ctrl+Shift+Y/G/H
     m_poller.AddHotkey('Y', ChordGuarded([] { Mod::Instance().Toggle(); }));
-    m_poller.AddHotkey('T', ChordGuarded([] { Mod::Instance().Recenter(); }));
     m_poller.AddHotkey('G', ChordGuarded([] { Mod::Instance().CycleDofMode(); }));
     m_poller.AddHotkey('H', ChordGuarded([] { Mod::Instance().ToggleYawMode(); }));
     // 5th user-facing slot in the cluster. Needed because which tracker app wins
@@ -91,10 +89,10 @@ bool Hotkeys::Start(const Config& cfg) {
         return false;
     }
 
-    Log::Line("Hotkeys ready: toggle=0x%02X recenter=0x%02X position=0x%02X yawmode=0x%02X "
-              "+ Ctrl+Shift+T/Y/G/H/U chords | diagnostics: Ctrl+Shift+D pose trace,"
+    Log::Line("Hotkeys ready: toggle=0x%02X position=0x%02X yawmode=0x%02X "
+              "+ Ctrl+Shift+Y/G/H/U chords | diagnostics: Ctrl+Shift+D pose trace,"
               " J extrapolation, I axis isolation, B verdict trace, Insert matrix dump",
-              cfg.toggleKey, cfg.recenterKey, cfg.positionToggleKey, cfg.yawModeKey);
+              cfg.toggleKey, cfg.positionToggleKey, cfg.yawModeKey);
 
     m_started = true;
     return true;

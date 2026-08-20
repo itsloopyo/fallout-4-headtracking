@@ -71,6 +71,9 @@ Whatever you track with, the output side is the same:
 - Output protocol: **UDP over network**.
 - Address: `127.0.0.1`, port `4242`.
 - Start tracking in OpenTrack first, then launch Fallout 4.
+- The mod never picks a centre of its own; it applies whatever your tracker
+  sends. Centre the view in your tracker app once you are settled, with
+  OpenTrack's Center bind or your phone app's CENTER button.
 
 ### VR Headset Setup
 
@@ -106,7 +109,6 @@ keys and the chords do exactly the same thing.
 
 | Action                 | Nav-cluster | Chord           |
 |------------------------|-------------|-----------------|
-| Recenter               | `Home`      | `Ctrl+Shift+T`  |
 | Toggle tracking        | `End`       | `Ctrl+Shift+Y`  |
 | Cycle tracking mode    | `Page Up`   | `Ctrl+Shift+G`  |
 | Toggle yaw mode        | `Page Down` | `Ctrl+Shift+H`  |
@@ -134,9 +136,12 @@ UDPPort=4242
 YawMultiplier=1.0
 PitchMultiplier=1.0
 RollMultiplier=1.0
-; Rotation smoothing (0.0 = snappy, internal 0.15 floor still applied;
-; raise toward 1.0 for noisier trackers - costs perceived latency)
-RotationSmoothing=0.0
+; Smoothing applied when the tracker runs on this machine (loopback).
+; 0 = no smoothing, 1 = heavy. Covers rotation and position.
+LocalSmoothing=0.0
+; Smoothing applied when the tracker is a remote device on the network.
+; 0 = no smoothing, 1 = heavy. Covers rotation and position.
+RemoteSmoothing=0.15
 
 [Position]
 ; Position tracking sensitivity (0.1-10.0, higher = more movement)
@@ -149,8 +154,6 @@ LimitY=0.20
 LimitZ=0.40
 ; Backward lean limit (prevents camera clipping through player model)
 LimitZBack=0.10
-; Smoothing factor (0.0 = none, 0.99 = maximum)
-Smoothing=0.15
 ; Invert position axes
 InvertX=true
 InvertY=false
@@ -161,7 +164,6 @@ Enabled=true
 [Hotkeys]
 ; Virtual key codes (hex)
 ToggleKey=0x23         ; End - Enable/disable head tracking
-RecenterKey=0x24       ; Home - Recenter view
 PositionToggleKey=0x21 ; Page Up - Cycle tracking mode
 YawModeKey=0x22        ; Page Down - Toggle world/local yaw
 
@@ -187,18 +189,26 @@ Toggle it live with `Page Down`.
   running. If another mod already owns the `dxgi.dll` slot, move one of them
   to `d3d11.dll`.
 - **No tracking response.** Your tracker must be sending UDP to
-  `127.0.0.1:4242` and must be started before the game. Check
-  `HeadTracking.log` for received packets, confirm `UDPPort` matches, and make
-  sure Windows Firewall is not blocking loopback. For a phone app, use your
-  PC's LAN address rather than `127.0.0.1`.
-- **Jittery or unstable tracking.** Raise `RotationSmoothing` toward `1.0` for
-  a noisy tracker, and raise `[Position] Smoothing` for positional jitter.
+  `127.0.0.1:4242` and must be started before the game. `HeadTracking.log`
+  records `First UDP packet received` with the sender address the moment
+  anything arrives; if that line is absent the tracker is not reaching the
+  game, so confirm `UDPPort` matches and that Windows Firewall is not blocking
+  loopback. For a phone app, use your PC's LAN address rather than
+  `127.0.0.1`.
+- **Jittery or unstable tracking.** Raise the smoothing value your tracker
+  actually uses: `RemoteSmoothing` for a phone or another device on the
+  network, `LocalSmoothing` for a tracker running on this PC. Each covers
+  rotation and position together.
   Webcam tracking benefits most from brighter, more even lighting. Lower the
   sensitivity multipliers if small head movements overshoot.
 - **Wrong rotation axis or inverted movement.** Flip the relevant
   `[Position] InvertX/InvertY/InvertZ` value. If yaw feels wrong at extreme
   up or down angles, toggle between horizon-locked and camera-local yaw with
   `Page Down`.
+- **Reporting a crash.** `HeadTracking.log` sits next to `Fallout4.exe` and is
+  rewritten from scratch on every launch. The previous launch is kept as
+  `HeadTracking.prev.log`, so the session that crashed survives the relaunch
+  that follows it - attach both files.
 
 ## Updating
 

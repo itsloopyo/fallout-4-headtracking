@@ -8,6 +8,7 @@
 #include "ui/notification.h"
 
 #include <cameraunlock/hooks/hook_manager.h>
+#include <cameraunlock/math/smoothing_utils.h>
 
 namespace Fallout4HT {
 
@@ -155,10 +156,11 @@ void Mod::ConfigureSession() {
 
     cameraunlock::TrackingProcessor& processor = m_session.GetProcessor();
     processor.SetSensitivity(sensitivity);
-    processor.SetSmoothing(m_config.rotationSmoothing);
 
-    Log::Line("TrackingProcessor initialized with sensitivity: yaw=%.2f pitch=%.2f roll=%.2f smoothing=%.2f",
-              sensitivity.yaw, sensitivity.pitch, sensitivity.roll, m_config.rotationSmoothing);
+    Log::Line("TrackingProcessor initialized with sensitivity: yaw=%.2f pitch=%.2f roll=%.2f "
+              "smoothing: local=%.2f remote=%.2f",
+              sensitivity.yaw, sensitivity.pitch, sensitivity.roll,
+              m_config.localSmoothing, m_config.remoteSmoothing);
 
     m_worldSpaceYaw.store(m_config.worldSpaceYaw);
     Log::Line("Yaw mode: %s", m_worldSpaceYaw.load() ? "horizon-locked (world)" : "camera-local");
@@ -169,13 +171,27 @@ void Mod::ConfigureSession() {
     if (!m_config.positionEnabled) {
         m_session.SetMode(cameraunlock::TrackingMode::RotationOnly);
     }
-    cameraunlock::PositionSettings posSettings(
-        m_config.positionSensitivityX, m_config.positionSensitivityY, m_config.positionSensitivityZ,
-        m_config.positionLimitX, m_config.positionLimitY, m_config.positionLimitZ, m_config.positionLimitZBack,
-        m_config.positionSmoothing,
-        m_config.positionInvertX, m_config.positionInvertY, m_config.positionInvertZ
-    );
+    // Field-by-field rather than the positional constructor: the argument list
+    // is long enough that a silent rebinding onto a neighbouring parameter
+    // would compile clean and only show up as wrong position limits.
+    cameraunlock::PositionSettings posSettings;
+    posSettings.sensitivity_x = m_config.positionSensitivityX;
+    posSettings.sensitivity_y = m_config.positionSensitivityY;
+    posSettings.sensitivity_z = m_config.positionSensitivityZ;
+    posSettings.limit_x = m_config.positionLimitX;
+    posSettings.limit_y = m_config.positionLimitY;
+    posSettings.limit_z = m_config.positionLimitZ;
+    posSettings.limit_z_back = m_config.positionLimitZBack;
+    posSettings.invert_x = m_config.positionInvertX;
+    posSettings.invert_y = m_config.positionInvertY;
+    posSettings.invert_z = m_config.positionInvertZ;
     m_session.GetPositionProcessor().SetSettings(posSettings);
+
+    // After SetSettings, never before: the session hands both values to the
+    // rotation and the position processor, and the connection flag that picks
+    // between them is fed from the receiver inside Update().
+    m_session.SetLocalSmoothing(m_config.localSmoothing);
+    m_session.SetRemoteSmoothing(m_config.remoteSmoothing);
     Log::Line("Position processor initialized (%s, sens=%.1f/%.1f/%.1f, limits=%.2f/%.2f/%.2f)",
               DofModeName(m_session.GetMode()),
               posSettings.sensitivity_x, posSettings.sensitivity_y, posSettings.sensitivity_z,
@@ -229,6 +245,24 @@ void Mod::Notify(const char* message) const {
     }
 }
 
+// The session re-reads the receiver's source-address check every update, so a
+// player who switches from a local OpenTrack instance to a phone on WiFi
+// mid-session gets the other smoothing parameter without restarting the game.
+// Nothing recorded that until now, so "the camera feels different than the
+// value I set" had no answer in the log. Change-gated: one line per switch, not
+// one per frame.
+void Mod::LogConnectionLocality() {
+    const bool isRemote = m_session.IsRemoteConnection();
+    if (m_remoteConnectionKnown && isRemote == m_remoteConnection) return;
+
+    m_remoteConnection = isRemote;
+    m_remoteConnectionKnown = true;
+    Log::Line("Tracker source is %s - smoothing=%.2f",
+              isRemote ? "a remote device" : "on this machine",
+              cameraunlock::math::GetEffectiveSmoothing(
+                  m_config.localSmoothing, m_config.remoteSmoothing, isRemote));
+}
+
 void Mod::SetEnabled(bool enabled) {
     bool wasEnabled = m_enabled.exchange(enabled);
     if (wasEnabled != enabled) {
@@ -239,14 +273,6 @@ void Mod::SetEnabled(bool enabled) {
 
 void Mod::Toggle() {
     SetEnabled(!m_enabled.load());
-}
-
-void Mod::Recenter() {
-    m_session.Recenter();
-    m_lastProcessTime = 0;
-
-    Log::Line("View recentered");
-    Notify("View Recentered");
 }
 
 void Mod::CycleDofMode() {
@@ -331,8 +357,8 @@ bool Mod::GetProcessedRotation(float& yaw, float& pitch, float& roll) {
             m_lastSecondSourceWarnMs = nowMs;
             Log::Line("WARNING: more than one app is sending head tracking to port %d"
                       " (%llu packets ignored). Two sources make the view jump between two"
-                      " poses, and the ignored one reaches the game with nothing at all -"
-                      " its recenter included. Close every tracker app but one - OpenTrack"
+                      " poses, and the ignored one reaches the game with nothing at all."
+                      " Close every tracker app but one - OpenTrack"
                       " and a vendor tool like Tobii Game Hub both send here - or press"
                       " Ctrl+Shift+U to drive from the other one.",
                       m_config.udpPort, static_cast<unsigned long long>(rejected));
@@ -358,19 +384,7 @@ bool Mod::GetProcessedRotation(float& yaw, float& pitch, float& roll) {
         roll = m_cachedRoll;
         return m_cachedValid;
     }
-
-    // Say so when the tracker app recenters us. The session does it inside
-    // Update(), so this is otherwise the one recenter path that leaves no trace
-    // at all - and "I pressed CENTER on my phone and the view did not move" is
-    // then unanswerable, with the press, the source lock and the camera all
-    // equally plausible and nothing on record to tell them apart.
-    const uint64_t remoteRecenters = m_session.GetRemoteRecenterCount();
-    if (remoteRecenters != m_reportedRemoteRecenters) {
-        m_reportedRemoteRecenters = remoteRecenters;
-        Log::Line("tracker app recentered the view (press %llu)",
-                  static_cast<unsigned long long>(remoteRecenters));
-        Notify("View Recentered (tracker app)");
-    }
+    LogConnectionLocality();
 
     m_cachedValid = m_session.GetRotation(yaw, pitch, roll);
 

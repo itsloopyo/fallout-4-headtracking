@@ -43,7 +43,22 @@ unsigned __stdcall InitThread(void* lpParam) {
     // Not the game process - exit silently.
     if (!WaitForGameModule()) return 1;
 
-    Log::Open(GetModulePathW("HeadTracking.log"));
+    // The core log opens truncating, so a crash-then-relaunch would destroy the
+    // session worth reading. Keep exactly one previous generation: the crash
+    // handler writes its report into the log the player is asked to send, and
+    // they relaunch before sending it.
+    const std::wstring logPath = GetModulePathW("HeadTracking.log");
+    const bool hadPriorLog = GetFileAttributesW(logPath.c_str()) != INVALID_FILE_ATTRIBUTES;
+    const bool rotated = MoveFileExW(logPath.c_str(),
+                                     GetModulePathW("HeadTracking.prev.log").c_str(),
+                                     MOVEFILE_REPLACE_EXISTING) != FALSE;
+    const DWORD rotateErr = GetLastError();
+
+    Log::Open(logPath);
+    if (hadPriorLog && !rotated) {
+        Log::Line("WARN: could not rotate the previous log to HeadTracking.prev.log (error %lu) - "
+                  "that file is from an older session", rotateErr);
+    }
     cameraunlock::diagnostics::InstallCrashHandler();
     Log::Line("Fallout 4 Head Tracking v%s attached to game process", VERSION);
 

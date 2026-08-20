@@ -20,7 +20,7 @@ set "FRAMEWORK_TYPE=ASILoader"
 :: original value came from). It does import dxgi.dll, so that is the proxy slot
 :: Ultimate ASI Loader has to occupy here.
 set "ASI_LOADER_NAME=dxgi.dll"
-set "MOD_CONTROLS=Controls (nav-cluster or Ctrl+Shift+letter chord):&echo   Home / Ctrl+Shift+T - Recenter&echo   End  / Ctrl+Shift+Y - Toggle tracking&echo   PgUp / Ctrl+Shift+G - Cycle tracking mode&echo   PgDn / Ctrl+Shift+H - Toggle world/local yaw&echo          Ctrl+Shift+U - Next tracker source"
+set "MOD_CONTROLS=Controls (nav-cluster or Ctrl+Shift+letter chord):&echo   End  / Ctrl+Shift+Y - Toggle tracking&echo   PgUp / Ctrl+Shift+G - Cycle tracking mode&echo   PgDn / Ctrl+Shift+H - Toggle world/local yaw&echo          Ctrl+Shift+U - Next tracker source"
 :: --- END CONFIG BLOCK ---
 
 set "WRAPPER_DIR=%~dp0"

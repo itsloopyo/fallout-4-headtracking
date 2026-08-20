@@ -478,6 +478,14 @@ int g_quietSeconds = 0;
 // How many consecutive healthy seconds earn the one-line summary.
 constexpr int kHealthySummarySeconds = 60;
 
+// A session that is broken stays broken, and the eight-line block costs about
+// 2 KB a second - 7 MB an hour of the same numbers, which buries the startup
+// chain in the file the player is asked to send. The onset is what diagnoses
+// the fault, so the first minute prints every second and after that one second
+// a minute does.
+uint64_t g_unhealthySeconds = 0;
+constexpr uint64_t kUnhealthyDetailSeconds = 60;
+
 // Start the healthy run over. Called from all three exits of the reporter -
 // nothing happening, the summary having just been printed, and any unhealthy
 // second - and spelling it out at each was three chances for one of them to keep
@@ -521,10 +529,12 @@ void ReportFrameVerdictsOnce() {
     if (poseOn + poseOff == 0 && g_ticks == 0) {
         ClearFrameVerdictCounters();
         ResetHealthyRun();
+        g_unhealthySeconds = 0;
         return;
     }
 
     if (healthy) {
+        g_unhealthySeconds = 0;
         // Accumulated only on healthy seconds, so the totals belong to the run
         // the line claims to describe. Folding an unhealthy second into them
         // would let a summary say "all the player's own" about a period that
@@ -551,7 +561,11 @@ void ReportFrameVerdictsOnce() {
         return;
     }
     ResetHealthyRun();
-    LogUnhealthySecond();
+    ++g_unhealthySeconds;
+    if (g_unhealthySeconds <= kUnhealthyDetailSeconds ||
+        g_unhealthySeconds % kUnhealthyDetailSeconds == 0) {
+        LogUnhealthySecond();
+    }
     ClearFrameVerdictCounters();
 }
 
