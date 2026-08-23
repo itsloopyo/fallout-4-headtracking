@@ -1,9 +1,19 @@
 """Static RTTI -> vtable -> vfunc-RVA discovery for an on-disk PE.
 
-SteamStub wraps only .text; .rdata (RTTI type descriptors, COLs, vtables) stays
-plaintext, and vtable slots hold valid function VAs even though the .text bytes
-they point at are encrypted at rest. So the PlayerCamera vtable and the RVA of
-each virtual (including Update) are recoverable purely statically.
+Reads the RTTI type descriptors, complete object locators and vtables that the
+MSVC toolchain emits into .rdata, and reports the function RVAs those vtable
+slots hold. That is enough to locate the PlayerCamera vtable and the Update
+slot without launching anything.
+
+This tool reads only sections that are already plaintext on disk. It does not
+decrypt, unpack, unwrap or otherwise circumvent any protection, and it will not
+work on a section that is protected - a packed .text simply reads as noise and
+is never touched here. Nothing it reads is stored in this repository; the output
+is a handful of integers describing a binary layout, and the mod resolves the
+same vtables at runtime by RTTI in any case.
+
+Point it at a copy of the game you own. Takes the executable path as its only
+argument.
 """
 import sys, struct
 import pefile
@@ -114,5 +124,6 @@ def main(path):
                 print(f"    [{k:2d}] rva 0x{fn_rva:08X}{'' if ok else '  <-- out of image'}")
 
 if __name__ == "__main__":
-    main(sys.argv[1] if len(sys.argv) > 1 else
-         r"C:\Program Files (x86)\Steam\steamapps\common\Fallout 4\Fallout4.exe")
+    if len(sys.argv) != 2:
+        sys.exit(f"usage: {sys.argv[0]} <path-to-Fallout4.exe>")
+    main(sys.argv[1])

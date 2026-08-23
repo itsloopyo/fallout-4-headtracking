@@ -2,6 +2,8 @@
 
 ![Mod GIF](https://raw.githubusercontent.com/itsloopyo/fallout-4-headtracking/main/assets/readme-clip.gif)
 
+*Fallout 4 footage (c) Bethesda Game Studios / Bethesda Softworks, recorded on a legitimately purchased copy and shown only to demonstrate this mod. It is not covered by this project's MIT licence - see [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).*
+
 An unofficial, OpenTrack compatible head tracking mod for Fallout 4 - move your head to look around while your mouse or controller keeps aiming the weapon, using an ordinary webcam, phone, or VR headset.
 
 ## Features
@@ -253,7 +255,13 @@ third-party components keep their own licenses; see
 - [Ultimate ASI Loader](https://github.com/ThirteenAG/Ultimate-ASI-Loader) by
   ThirteenAG.
 - [OpenTrack](https://github.com/opentrack/opentrack).
-- [MinHook](https://github.com/TsudaKageyu/minhook) by Tsuda Kageyu.
+- [MinHook](https://github.com/TsudaKageyu/minhook) by Tsuda Kageyu, and the
+  Hacker Disassembler Engine by Vyacheslav Patkov that it builds on. Our copy is
+  modified; the changes are listed in `extern/minhook/MODIFICATIONS.md`.
+- [CommonLibF4](https://github.com/Ryan-rsm-McKenzie/CommonLibF4) by
+  Ryan-rsm-McKenzie, and [CommonLibSSE-NG](https://github.com/alandtse/CommonLibVR),
+  for the engine struct offsets and vtable indices this mod hooks. Neither is
+  bundled or linked; no code from either was copied.
 - [CameraUnlock Core](https://github.com/itsloopyo/cameraunlock-core), the
   shared head-tracking library behind this mod.
 

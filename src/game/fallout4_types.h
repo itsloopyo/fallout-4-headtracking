@@ -9,11 +9,13 @@
 // Fallout 4 1.10.163 (Creation Engine / NetImmerse) camera layout.
 //
 // Discovery was STATIC (no game launch). Sources:
-//   - Struct offsets: CommonLibF4 (Ryan-rsm-McKenzie) + CommonLibSSE-NG cross-check.
+//   - Struct offsets: CommonLibF4 (Ryan-rsm-McKenzie, MIT) cross-checked against
+//     CommonLibSSE-NG (MIT). Both are credited in THIRD-PARTY-NOTICES.md; no code
+//     from either is copied here, only the numbers.
 //   - PlayerCamera / PlayerCharacter vtables + Update slots: static RTTI scan of
-//     the on-disk EXE (scripts/static_rtti_scan.py). SteamStub (.bind) wraps only
-//     .text, so the RTTI/vtables in .rdata are plaintext and vtable slots hold
-//     valid function RVAs even though the .text they point at is encrypted at rest.
+//     the on-disk EXE (scripts/static_rtti_scan.py), which reads the RTTI and
+//     vtables the compiler emits into .rdata. Those are plaintext on disk, so
+//     nothing needs unwrapping and nothing is unwrapped.
 //
 // The mod resolves both vtables at RUNTIME via RTTI (DRM-immune, patch-
 // independent); the RVAs below are recorded for reference/triage only. The
