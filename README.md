@@ -1,10 +1,10 @@
 # Fallout 4 Head Tracking
 
-![Mod GIF](https://raw.githubusercontent.com/itsloopyo/fallout-4-headtracking/main/assets/readme-clip.gif)
+![Fallout 4 running with this mod](https://raw.githubusercontent.com/itsloopyo/fallout-4-headtracking/main/assets/readme-clip.gif)
 
 *Fallout 4 footage (c) Bethesda Game Studios / Bethesda Softworks, recorded on a legitimately purchased copy and shown only to demonstrate this mod. It is not covered by this project's MIT licence - see [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).*
 
-An unofficial, OpenTrack compatible head tracking mod for Fallout 4 - move your head to look around while your mouse or controller keeps aiming the weapon, using an ordinary webcam, phone, or VR headset.
+An unofficial head tracking mod for Fallout 4 that moves the view with your head while your mouse or controller keeps aiming, driven by a webcam, phone, or any OpenTrack compatible tracker, with no VR headset required.
 
 ## Features
 
