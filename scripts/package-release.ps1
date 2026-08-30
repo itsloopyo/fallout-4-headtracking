@@ -1,18 +1,16 @@
 #!/usr/bin/env pwsh
 #Requires -Version 5.1
-# Package release ZIPs for Fallout 4 Head Tracking.
-# Produces two archives in release/:
-#   - Fallout4HeadTracking-v<version>-installer.zip (GitHub Releases)
+# Package the release ZIP for Fallout 4 Head Tracking.
+# Produces one archive in release/:
+#   - Fallout4HeadTracking-v<version>-installer.zip (GitHub Releases, and the
+#       payload the Lopari launcher installs)
 #       install.cmd + uninstall.cmd + plugins/ + vendor/ultimate-asi-loader/
 #       + shared/ (find-game.ps1 + GamePathDetection.psm1 + games.json)
 #       + docs
-#   - Fallout4HeadTracking-v<version>-nexus.zip (Nexus Mods)
-#       Root/Fallout4HeadTracking.asi (game-root payload under Root/ so MO2
-#       Root Builder deploys it to the game folder; manual installers copy
-#       Root/ contents in) + README/CHANGELOG/THIRD-PARTY-NOTICES/LICENSE at
-#       the archive root. No HeadTracking.ini - the mod self-generates it on
-#       first launch, so bundling it would clobber user config on update.
-#       Nexus users manage their own ASI loader.
+#
+# There is no Nexus Mods layout. Vortex's Fallout 4 support deploys every mod
+# relative to Data/ and cannot place a file in the game root, so an ASI plugin
+# shipped that way lands in Data/Root/ and silently never loads.
 #
 # Vendoring is refreshed manually by the dev via 'pixi run update-deps'
 # (scripts/update-deps.ps1) and committed under vendor/. CI never refreshes;
@@ -116,10 +114,10 @@ if (Test-Path $installerZip) { Remove-Item $installerZip -Force }
 
 Write-Host ""
 Write-Host "Creating installer ZIP..." -ForegroundColor Cyan
-# tar.exe (bsdtar), not Compress-Archive, for the same reason as the Nexus ZIP
-# below: PowerShell 5.1 writes backslash separators into the zip, so a strict
-# extractor sees "plugins\Fallout4HeadTracking.asi" as one flat filename and
-# never creates the plugins\ folder install.cmd copies from.
+# tar.exe (bsdtar), not Compress-Archive: PowerShell 5.1 writes backslash
+# separators into the zip, so a strict extractor sees
+# "plugins\Fallout4HeadTracking.asi" as one flat filename and never creates the
+# plugins\ folder install.cmd copies from.
 $tarExe = Join-Path $env:SystemRoot "System32\tar.exe"
 Push-Location $stagingInstaller
 try {
@@ -131,63 +129,11 @@ Remove-Item -Recurse -Force $stagingInstaller
 $installerKB = (Get-Item $installerZip).Length / 1KB
 Write-Host ("  $installerZip ({0:N1} KB)" -f $installerKB) -ForegroundColor Green
 
-# --- Nexus ZIP ----------------------------------------------------------------
-
-Write-Host ""
-Write-Host "--- Nexus ZIP ---" -ForegroundColor Yellow
-Write-Host ""
-
-$stagingNexus = Join-Path $releaseDir "staging-nexus"
-if (Test-Path $stagingNexus) { Remove-Item -Recurse -Force $stagingNexus }
-New-Item -ItemType Directory -Path $stagingNexus -Force | Out-Null
-
-# The .asi must land in the game root (next to Fallout4.exe), but MO2's
-# virtual file system only covers Data/ - so the game-root payload goes under
-# Root/, which MO2's Root Builder deploys to the game folder. Manual / Vortex
-# installers copy the contents of Root/ in by hand.
-$nexusRoot = Join-Path $stagingNexus "Root"
-New-Item -ItemType Directory -Path $nexusRoot -Force | Out-Null
-Copy-Item $asiPath -Destination $nexusRoot -Force
-Write-Host "  Root/$modName.asi" -ForegroundColor Green
-
-# HeadTracking.ini is deliberately NOT shipped: Mod::LoadConfig writes it with
-# defaults on first launch if absent, so bundling it would overwrite the
-# user's tuned config every time they update the mod through Nexus.
-#
-# Docs sit at the archive root (informational, not deployed to the game
-# folder). THIRD-PARTY-NOTICES travels with the binary for attribution of the
-# statically-linked libraries (MinHook).
-foreach ($doc in @("README.md", "CHANGELOG.md", "THIRD-PARTY-NOTICES.md", "LICENSE")) {
-    $p = Join-Path $projectDir $doc
-    if (-not (Test-Path $p)) { throw "Required doc for Nexus ZIP not found: $p" }
-    Copy-Item $p -Destination $stagingNexus -Force
-    Write-Host "  $doc" -ForegroundColor Green
-}
-
-$nexusZip = Join-Path $releaseDir "$modName-v$version-nexus.zip"
-if (Test-Path $nexusZip) { Remove-Item $nexusZip -Force }
-
-Write-Host ""
-Write-Host "Creating nexus ZIP..." -ForegroundColor Cyan
-# tar.exe again: a Compress-Archive "Root\file.asi" defeats the MO2 Root
-# Builder layout the same way it defeats plugins\ in the installer ZIP.
-Push-Location $stagingNexus
-try {
-    & $tarExe -a -c -f $nexusZip *
-    if ($LASTEXITCODE -ne 0) { throw "tar.exe failed to create the Nexus ZIP (exit $LASTEXITCODE)" }
-} finally { Pop-Location }
-Remove-Item -Recurse -Force $stagingNexus
-
-$nexusKB = (Get-Item $nexusZip).Length / 1KB
-Write-Host ("  $nexusZip ({0:N1} KB)" -f $nexusKB) -ForegroundColor Green
-
 # --- Summary ------------------------------------------------------------------
 
 Write-Host ""
 Write-Host "=== Package Complete ===" -ForegroundColor Magenta
 Write-Host ""
 Write-Host ("Installer: $installerZip ({0:N1} KB)" -f $installerKB) -ForegroundColor Green
-Write-Host ("Nexus:     $nexusZip ({0:N1} KB)" -f $nexusKB) -ForegroundColor Green
 
 Write-Output $installerZip
-Write-Output $nexusZip

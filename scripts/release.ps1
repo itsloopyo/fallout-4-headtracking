@@ -219,4 +219,4 @@ if ($LASTEXITCODE -ne 0) { throw "git push of tag failed" }
 
 Write-Host ""
 Write-Host "Release $tagName initiated!" -ForegroundColor Green
-Write-Host "GitHub Actions will build and publish installer + nexus ZIPs." -ForegroundColor Gray
+Write-Host "GitHub Actions will build and publish the installer ZIP." -ForegroundColor Gray

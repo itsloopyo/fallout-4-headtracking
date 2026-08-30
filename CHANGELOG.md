@@ -19,6 +19,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   VATS freezes the game thread was pinned to a per-build address, so the Fallout
   4 1.11.240 patch left it dormant and the overlay kept the projection it was
   laid out with.
+- Uninstalling now deletes `HeadTracking.log`, `HeadTracking.prev.log` and
+  `HeadTracking.verdict.txt`. The mod writes them next to the game exe at
+  runtime, so they were left behind after the payload was removed.
 
 ### Changed
 - Removed recentring from the mod. The `Home` key, the `Ctrl+Shift+T` chord and

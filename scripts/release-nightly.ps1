@@ -20,4 +20,5 @@ Publish-NightlyBuild `
     -ModName 'Fallout4HeadTracking' `
     -Version $version `
     -ProjectRoot $ProjectRoot `
+    -NoNexusZip `
     -AllowDirty:$AllowDirty

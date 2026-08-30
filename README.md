@@ -47,18 +47,23 @@ $env:FALLOUT_4_PATH = "D:\Games\Steam\steamapps\common\Fallout 4"
 
 ### Manual Installation
 
-Use the Nexus ZIP (`Fallout4HeadTracking-v<version>-nexus.zip`) if you would
-rather place files by hand or deploy through a mod manager. Its `Root/`
-folder holds the game-root payload, which Mod Organizer 2's Root Builder
-deploys for you; Vortex and manual installers copy the contents of `Root/`
-into the game folder themselves.
+`install.cmd` does everything below for you. Place the files by hand only if
+you would rather see exactly what lands where; both come out of the installer
+ZIP, as `plugins/Fallout4HeadTracking.asi` and
+`vendor/ultimate-asi-loader/dinput8.dll`.
+
+Mod managers do not deploy this mod. An ASI plugin has to sit next to
+`Fallout4.exe`, and Fallout 4 mod managers deploy into `Data/`: Vortex has no
+way to reach the game root at all, and Mod Organizer 2 needs Root Builder on
+top of its virtual file system. Install into the game folder instead, with
+`install.cmd` or by hand.
 
 1. Install an ASI loader in a proxy slot Fallout 4 actually imports:
    `dxgi.dll`, `d3d11.dll`, `xinput1_3.dll`, or `winhttp.dll`. The
    [Ultimate ASI Loader](https://github.com/ThirteenAG/Ultimate-ASI-Loader)
    bundled in our installer ZIP works, renamed to `dxgi.dll`. `dinput8.dll`
-   and `winmm.dll` do **not** work here: `Fallout4.exe` never imports them,
-   so the loader is never loaded.
+   does **not** work here: `Fallout4.exe` never imports it, so the loader is
+   never loaded.
 2. Drop `Fallout4HeadTracking.asi` next to `Fallout4.exe`. The mod writes its
    own `HeadTracking.ini` beside it on first launch.
 
@@ -258,7 +263,7 @@ pixi run build-release
 pixi run package
 ```
 
-`pixi run package` writes the installer and Nexus ZIPs to `release/`.
+`pixi run package` writes the installer ZIP to `release/`.
 
 ## Community & Support
 

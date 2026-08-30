@@ -20,6 +20,8 @@ set "MANAGED_SUBFOLDER="
 set "ASSEMBLY_DLL="
 set "MANAGED_EXTRAS="
 set "ASI_LOADER_NAME=dxgi.dll"
+:: Written next to the .asi at runtime, so they survive removing the payload.
+set "MOD_LEFTOVERS=HeadTracking.log HeadTracking.prev.log HeadTracking.verdict.txt"
 :: --- END CONFIG BLOCK ---
 
 :: Pin delayed expansion off before `%*` is expanded on the `call` below.
