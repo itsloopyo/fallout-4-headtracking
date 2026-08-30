@@ -8,6 +8,7 @@
 #include "hook_slot.h"
 #include "core/logging.h"
 #include "core/seh_guard.h"
+#include "ui/game_window.h"
 
 namespace Fallout4HT {
 namespace {
@@ -125,6 +126,43 @@ bool MoveCrosshair(void* crosshair, double dx, double dy, std::atomic<uint64_t>&
     return true;
 }
 
+// The engine's frustum and the window it is rendered into agree on a build that
+// supports the display's aspect and disagree on one that does not, and the
+// difference lands entirely on the reticle's X. Reporting both, once, means a
+// bug report says which case the player is in instead of leaving it to be
+// guessed from a description of the symptom.
+void ReportAspectOnce(const CameraRootSnapshots& snap, double viewportAspect) {
+    static std::atomic<bool> s_reported{false};
+    if (!(viewportAspect > 0.0) || !snap.aimValid) return;
+    if (!(snap.frustumTop > 0.0f)) return;
+    if (s_reported.exchange(true)) return;
+
+    const double frustumAspect = static_cast<double>(snap.frustumRight) / snap.frustumTop;
+    const double ratio = frustumAspect / viewportAspect;
+    Log::Line("aspect: viewport %.4f, camera frustum %.4f (%.3fx) - %s",
+              viewportAspect, frustumAspect, ratio,
+              (ratio > 0.98 && ratio < 1.02)
+                  ? "they agree, the build renders this display's shape"
+                  : "they DISAGREE, so this build renders a frustum that is not the "
+                    "window's shape and stretches it; the reticle follows the window");
+}
+
+// A known stage offset, swept so the endpoints are unmistakable. 640 is the
+// half-stage the capped model gives below 16:9 and the stretched model gives at
+// every aspect, so where the sweep stops separates the two: on the screen edge
+// means the movie stretches as W/1280, short of it means the scale is capped at
+// H/720. A sweep rather than a static offset because a stationary reticle a bit
+// off centre tells you nothing about how far it could have gone.
+CrosshairStageOffset StageRulerOffset() {
+    constexpr double kRulerHalfWidth = 640.0;
+    constexpr double kPeriodMillis = 4000.0;
+    constexpr double kTwoPi = 6.283185307179586;
+
+    const double phase = (GetTickCount64() % static_cast<uint64_t>(kPeriodMillis))
+                         / kPeriodMillis;
+    return { kRulerHalfWidth * std::sin(phase * kTwoPi), 0.0 };
+}
+
 void __fastcall HUDCrosshairUpdateHook(void* thisCrosshair) {
     g_originalCrosshairUpdate(thisCrosshair);
 
@@ -133,10 +171,15 @@ void __fastcall HUDCrosshairUpdateHook(void* thisCrosshair) {
     CameraRootSnapshots snap{};
     const bool haveSnap = GetCameraRootSnapshots(snap);
 
-    const CrosshairStageOffset offset = AbSwitches::CrosshairMoveEnabled()
-        ? ComputeCrosshairStageOffset(haveSnap, snap.aimValid, snap.aimNdcX, snap.aimNdcY,
-                                      snap.frustumRight, snap.frustumTop)
-        : CrosshairStageOffset{};
+    const double viewportAspect = GetViewportAspect();
+    ReportAspectOnce(snap, viewportAspect);
+
+    const CrosshairStageOffset offset = AbSwitches::StageRulerEnabled()
+        ? StageRulerOffset()
+        : (AbSwitches::CrosshairMoveEnabled()
+               ? ComputeCrosshairStageOffset(haveSnap, snap.aimValid, snap.aimNdcX, snap.aimNdcY,
+                                             viewportAspect)
+               : CrosshairStageOffset{});
 
     const bool wantMoved = (offset.dx != 0.0 || offset.dy != 0.0);
     if (!wantMoved && !g_crosshairMoved) return;
@@ -172,15 +215,44 @@ const uint8_t kCrosshairUpdatePattern[] = {
     0x0F, 0xB6, 0x15, 0x00, 0x00, 0x00, 0x00, 0x48, 0x8B, 0xF9
 };
 
+// Scope init on 1.10.163. The newer build hands the +0x10 DisplayInfo to a
+// helper (`add rcx,0x10` then a call); this one inlines it, so the shared byte
+// run is `mov [rcx],rdx` followed by `lea r8,[rcx+0x10]` and the four stores
+// that clear the block. Resolved from the call site of a HUD function that
+// stages an offset exactly the way MoveCrosshair does, rather than from a
+// prologue - the obvious prologue anchor matched an unrelated function first.
+const uint8_t kScopeInitPattern110163[] = {
+    0x40, 0x53, 0x48, 0x83, 0xEC, 0x00, 0x48, 0x89, 0x11, 0x33, 0xC0,
+    0x4C, 0x8D, 0x41, 0x10, 0x49, 0x89, 0x40, 0x60, 0x49, 0x89, 0x40, 0x68,
+    0x49, 0x89, 0x40, 0x70, 0x49, 0x89, 0x40, 0x78
+};
+// Crosshair update on 1.10.163: slot 4 of the HUDCrosshair vtable, which RTTI
+// puts at RVA 0x2D150F8 on that build. Same shape as the newer build's - frame,
+// then a `movzx` of a global byte, then `this` into a saved register - and it
+// caches that byte in a member. The vtable is what identifies it as a
+// HUDCrosshair member function; that it is the per-frame update rather than
+// another virtual is confirmed by its call rate at runtime, not statically.
+const uint8_t kCrosshairUpdatePattern110163[] = {
+    0x40, 0x53, 0x48, 0x83, 0xEC, 0x00, 0x0F, 0xB6, 0x05, 0x00, 0x00,
+    0x00, 0x00, 0x48, 0x8B, 0xD9, 0x38, 0x81, 0x2C, 0x06, 0x00, 0x00,
+    0x74, 0x00, 0x88, 0x81, 0x2C, 0x06, 0x00, 0x00
+};
+
 } // namespace
 
 void InstallCrosshairHook(const TextSection& text, uintptr_t moduleBase) {
-    const uintptr_t scopeInitFn = FindUniquePattern(
-        text, kScopeInitPattern, "xxxxxxxxx?xxxxxxxxxxx????", "scope init");
+    const char* initVariant = "none";
+    const uintptr_t scopeInitFn = FindUniquePatternEither(
+        text, kScopeInitPattern, "xxxxxxxxx?xxxxxxxxxxx????", "1.11",
+        kScopeInitPattern110163, "xxxxx?xxxxxxxxxxxxxxxxxxxxxxxxx", "1.10.163",
+        "scope init", initVariant);
     const uintptr_t scopeApplyFn = FindUniquePattern(
         text, kScopeApplyPattern, "xxxxxxxxxxx????xxx", "scope apply");
-    const uintptr_t crosshairFn = FindUniquePattern(
-        text, kCrosshairUpdatePattern, "xxxxxxx????xxx????xxx", "crosshair update");
+    const char* updateVariant = "none";
+    const uintptr_t crosshairFn = FindUniquePatternEither(
+        text, kCrosshairUpdatePattern, "xxxxxxx????xxx????xxx", "1.11",
+        kCrosshairUpdatePattern110163, "xxxxx?xxx????xxxxxxxxxx?xxxxxx", "1.10.163",
+        "crosshair update", updateVariant);
 
     if (!scopeInitFn || !scopeApplyFn || !crosshairFn) {
         Log::Line("WARN: crosshair plumbing not found (init=%d apply=%d update=%d)"
@@ -189,10 +261,10 @@ void InstallCrosshairHook(const TextSection& text, uintptr_t moduleBase) {
         return;
     }
 
-    Log::Line("crosshair: scope init RVA 0x%llX apply RVA 0x%llX update RVA 0x%llX",
-              static_cast<unsigned long long>(scopeInitFn - moduleBase),
+    Log::Line("crosshair: scope init RVA 0x%llX (%s) apply RVA 0x%llX update RVA 0x%llX (%s)",
+              static_cast<unsigned long long>(scopeInitFn - moduleBase), initVariant,
               static_cast<unsigned long long>(scopeApplyFn - moduleBase),
-              static_cast<unsigned long long>(crosshairFn - moduleBase));
+              static_cast<unsigned long long>(crosshairFn - moduleBase), updateVariant);
 
     if (!g_crosshairHook.Install(reinterpret_cast<void*>(crosshairFn),
                                  reinterpret_cast<void*>(&HUDCrosshairUpdateHook),

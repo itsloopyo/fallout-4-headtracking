@@ -58,4 +58,32 @@ uintptr_t FindUniquePattern(const TextSection& text,
     return hit;
 }
 
+// The same function can be scheduled differently by different game builds, so a
+// hook carries a prologue per build shape. They are tried in order and the first
+// unique match wins; `matched` names the one that did, which is what a log line
+// needs to say which build the player is on.
+//
+// Deliberately NOT a fingerprint-keyed table of addresses. RVAs move on every
+// relink and would strand players on any build nobody has added yet, whereas a
+// prologue survives a patch that only shifts code around - which is why nothing
+// in this mod is pinned per build.
+template <size_t N1, size_t N2>
+uintptr_t FindUniquePatternEither(const TextSection& text,
+                                  const uint8_t (&first)[N1], const char (&firstMask)[N1 + 1],
+                                  const char* firstName,
+                                  const uint8_t (&second)[N2], const char (&secondMask)[N2 + 1],
+                                  const char* secondName,
+                                  const char* label, const char*& matched) {
+    if (const uintptr_t hit = FindUniquePattern(text, first, firstMask, label)) {
+        matched = firstName;
+        return hit;
+    }
+    if (const uintptr_t hit = FindUniquePattern(text, second, secondMask, label)) {
+        matched = secondName;
+        return hit;
+    }
+    matched = "none";
+    return 0;
+}
+
 } // namespace Fallout4HT

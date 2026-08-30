@@ -9,6 +9,7 @@
 
 #include <cameraunlock/hooks/hook_manager.h>
 #include <cameraunlock/math/smoothing_utils.h>
+#include <cameraunlock/memory/pe_fingerprint.h>
 
 namespace Fallout4HT {
 
@@ -30,6 +31,32 @@ uint64_t GetTimeMicros() {
     const uint64_t q = static_cast<uint64_t>(now.QuadPart);
     const uint64_t f = static_cast<uint64_t>(freq.QuadPart);
     return (q / f) * 1000000ULL + ((q % f) * 1000000ULL) / f;
+}
+
+// The first thing a "it does not work" report needs is which copy of the game is
+// running. The Steam EXE's FileVersion is the SteamStub wrapper's rather than
+// the game's, so it is not the honest identifier; the PE fingerprint is, and the
+// module path separates a Steam install from a GOG or Game Pass one at a glance.
+void LogGameBuild() {
+    HMODULE game = GetModuleHandleA(GAME_EXE);
+    if (!game) {
+        Log::Line("ERROR: %s is not loaded", GAME_EXE);
+        return;
+    }
+
+    char path[MAX_PATH] = {};
+    if (GetModuleFileNameA(game, path, MAX_PATH) == 0) {
+        strcpy_s(path, GAME_EXE);
+    }
+
+    cameraunlock::memory::PeFingerprint fingerprint{};
+    if (!cameraunlock::memory::ReadPeFingerprint(game, fingerprint)) {
+        Log::Line("WARN: could not read the PE headers of %s", path);
+        return;
+    }
+
+    Log::Line("game build: %s (TimeDateStamp 0x%08X, SizeOfImage 0x%08X, CheckSum 0x%08X)",
+              path, fingerprint.TimeDateStamp, fingerprint.SizeOfImage, fingerprint.CheckSum);
 }
 
 const char* DofModeName(cameraunlock::TrackingMode mode) {
@@ -77,6 +104,8 @@ bool Mod::Initialize() {
     }
 
     Log::Line("Fallout 4 Head Tracking v%s initializing...", VERSION);
+
+    LogGameBuild();
 
     if (!LoadConfig()) {
         Log::Line("WARN: Using default configuration");

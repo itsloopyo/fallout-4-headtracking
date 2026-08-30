@@ -15,6 +15,11 @@ constexpr int kMinGameWindowSize = 200;
 // mode change before the player notices, long enough to cost nothing.
 constexpr DWORD kPlacementPollMillis = 500;
 
+// How stale the cached viewport aspect may get. The reticle reads it every
+// frame, so it cannot call GetClientRect each time, but a resolution change has
+// to be picked up without a restart.
+constexpr DWORD kViewportRecheckMillis = 1000;
+
 struct FindWindowContext {
     DWORD pid;
     HWND  hwnd;
@@ -156,6 +161,31 @@ void WatchWindowPlacement() {
 
         CenterWindowIfWindowed(hwnd);
     }
+}
+
+double GetViewportAspect() {
+    // Re-read periodically rather than once: the player can change resolution
+    // or switch between windowed and fullscreen without restarting, and a stale
+    // aspect puts the reticle off by exactly that ratio.
+    static HWND s_hwnd = nullptr;
+    static double s_aspect = 0.0;
+    static DWORD s_lastCheck = 0;
+
+    const DWORD now = GetTickCount();
+    if (s_aspect != 0.0 && (now - s_lastCheck) < kViewportRecheckMillis) return s_aspect;
+    s_lastCheck = now;
+
+    if (!s_hwnd || !IsWindow(s_hwnd)) s_hwnd = FindGameWindow(0);
+    if (!s_hwnd) return s_aspect;
+
+    RECT client;
+    if (!GetClientRect(s_hwnd, &client)) return s_aspect;
+    const long width = client.right - client.left;
+    const long height = client.bottom - client.top;
+    if (width <= 0 || height <= 0) return s_aspect;
+
+    s_aspect = static_cast<double>(width) / static_cast<double>(height);
+    return s_aspect;
 }
 
 } // namespace Fallout4HT

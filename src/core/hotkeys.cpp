@@ -54,6 +54,7 @@ bool Hotkeys::Start(const Config& cfg) {
     m_poller.AddHotkey('V', ChordGuarded([] { ProbeVats(); }));
     m_poller.AddHotkey('X', ChordGuarded([] { ProbeVatsInVats(); }));
     m_poller.AddHotkey('N', ChordGuarded([] { AbSwitches::ToggleStripPoseInCleanScope(); }));
+    m_poller.AddHotkey('M', ChordGuarded([] { AbSwitches::ToggleStageRuler(); }));
 
     // Ctrl+Shift+W: report what writes cameraRoot's world rotation. Whatever
     // rebuilds it to the body's orientation each frame is the last uncovered

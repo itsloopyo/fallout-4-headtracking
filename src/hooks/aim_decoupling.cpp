@@ -239,6 +239,23 @@ const uint8_t kLaunchPattern[] = {
     0x32, 0xC0, 0x48, 0x8B, 0x49, 0x20, 0x48, 0x85, 0xC9
 };
 
+// The same function on 1.10.163, which is what GOG sells and has sold since
+// 2023 - it never took the next-gen update. Same body, differently scheduled:
+// the `xor al,al` above sits between `mov rdi,rcx` and the camera fetch on the
+// newer build and simply is not there on this one, which is enough to sink the
+// pattern above. The prologue differs too (register saves instead of the
+// `mov r11,rsp` frame). Confirmed by decompiling 1.10.163's own binary: it takes
+// its direction from row1 at +0x80 of the node behind arg+0x20 and writes the
+// launch angles to +0x4C / +0x50, exactly as the newer build does.
+//
+// Both halves are load-bearing here as well - the prologue alone matches 17
+// sites in .text and the tail alone matches 17.
+const uint8_t kLaunchPattern110163[] = {
+    0x40, 0x55, 0x53, 0x56, 0x57, 0x41, 0x54, 0x41, 0x56, 0x41, 0x57,
+    0x48, 0x8D, 0x6C, 0x24, 0x00, 0x48, 0x81, 0xEC, 0x00, 0x00, 0x00,
+    0x00, 0x48, 0x8B, 0xF9, 0x48, 0x8B, 0x49, 0x20, 0x48, 0x85, 0xC9
+};
+
 // ---------------------------------------------------------------------------
 // THE AUTO-AIM SOLVER.
 //
@@ -293,16 +310,19 @@ const uint8_t kAutoAimPattern[] = {
 } // namespace
 
 bool InstallFirePathHook(const TextSection& text, uintptr_t moduleBase) {
-    const uintptr_t launchFn = FindUniquePattern(
-        text, kLaunchPattern, "xxxxxxxx????xxx????xxxxxxxxxxxx", "fire path");
+    const char* variant = "none";
+    const uintptr_t launchFn = FindUniquePatternEither(
+        text, kLaunchPattern, "xxxxxxxx????xxx????xxxxxxxxxxxx", "1.11",
+        kLaunchPattern110163, "xxxxxxxxxxxxxxx?xxx????xxxxxxxxxx", "1.10.163",
+        "fire path", variant);
     if (!launchFn) {
         Log::Line("ERROR: fire path not found - aim decoupling is unavailable on this build,"
                   " so head tracking is staying off rather than aiming the reticle away from"
                   " where shots go");
         return false;
     }
-    Log::Line("fire path found at RVA 0x%llX",
-              static_cast<unsigned long long>(launchFn - moduleBase));
+    Log::Line("fire path found at RVA 0x%llX (%s prologue)",
+              static_cast<unsigned long long>(launchFn - moduleBase), variant);
 
     if (!g_launchHook.Install(reinterpret_cast<void*>(launchFn),
                               reinterpret_cast<void*>(&ComputeLaunchDataHook),

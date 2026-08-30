@@ -77,6 +77,19 @@ const uint8_t kBuildViewPattern[] = {
     0xF3, 0x0F, 0x10, 0x91, 0xA4, 0x00, 0x00, 0x00
 };
 
+// The same build on 1.10.163: same two loads off the NiCamera in arg 1, into a
+// different pair of registers and behind a longer prologue. Identified by what
+// it reads off that camera - row1 of the world rotation at +0x80, the world
+// translation at +0xA0, and the NiFrustum at +0x160 - which together are a view
+// build and nothing else. +0xA0/+0xA4 alone is a common enough struct offset
+// that 300 functions touch it, so the entry shape is what carries this one.
+const uint8_t kBuildViewPattern110163[] = {
+    0x48, 0x8B, 0xC4, 0x48, 0x89, 0x58, 0x08, 0x48, 0x89, 0x78, 0x10,
+    0x55, 0x48, 0x8D, 0x68, 0x00, 0x48, 0x81, 0xEC, 0x00, 0x00, 0x00, 0x00,
+    0xF3, 0x0F, 0x10, 0xA1, 0xA0, 0x00, 0x00, 0x00,
+    0xF3, 0x0F, 0x10, 0x99, 0xA4, 0x00, 0x00, 0x00
+};
+
 // Every argument is passed straight through: the signature is not known beyond
 // the first pointer, and declaring fewer would let the compiler clobber the rest
 // before the original ever sees them.
@@ -295,8 +308,11 @@ void* __fastcall BuildViewMatrixHook(void* a, void* b, void* c, void* d) {
 } // namespace
 
 bool InstallViewMatrixHook(const TextSection& text, uintptr_t moduleBase) {
-    const uintptr_t buildFn = FindUniquePattern(
-        text, kBuildViewPattern, "xxxxxx????xxxxxxxxxxxxxxxx", "view matrix build");
+    const char* variant = "none";
+    const uintptr_t buildFn = FindUniquePatternEither(
+        text, kBuildViewPattern, "xxxxxx????xxxxxxxxxxxxxxxx", "1.11",
+        kBuildViewPattern110163, "xxxxxxxxxxxxxxx?xxx????xxxxxxxxxxxxxxxx", "1.10.163",
+        "view matrix build", variant);
     if (!buildFn) {
         Log::Line("WARN: view matrix build not found - the engine can rebuild a stock view matrix"
                   " while game logic is being shown the clean camera, and that one reaches the"
@@ -304,8 +320,8 @@ bool InstallViewMatrixHook(const TextSection& text, uintptr_t moduleBase) {
         return false;
     }
 
-    Log::Line("view matrix build found at RVA 0x%llX",
-              static_cast<unsigned long long>(buildFn - moduleBase));
+    Log::Line("view matrix build found at RVA 0x%llX (%s prologue)",
+              static_cast<unsigned long long>(buildFn - moduleBase), variant);
 
     if (!g_buildHook.Install(reinterpret_cast<void*>(buildFn),
                              reinterpret_cast<void*>(&BuildViewMatrixHook),

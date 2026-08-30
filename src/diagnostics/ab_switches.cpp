@@ -12,6 +12,7 @@ namespace {
 // Read on the camera thread, written from the hotkey thread.
 std::atomic<bool> g_crosshairMove{true};
 std::atomic<bool> g_stripPoseInCleanScope{false};
+std::atomic<bool> g_stageRuler{false};
 
 void Announce(const char* name, bool on) {
     Log::Line("A/B: %s %s", name, on ? "ON" : "OFF");
@@ -33,6 +34,14 @@ void ToggleStripPoseInCleanScope() {
     const bool on = !g_stripPoseInCleanScope.load();
     g_stripPoseInCleanScope.store(on);
     Announce("Strip head pose during player update (the old flicker)", on);
+}
+
+bool StageRulerEnabled() { return g_stageRuler.load(std::memory_order_relaxed); }
+
+void ToggleStageRuler() {
+    const bool on = !g_stageRuler.load();
+    g_stageRuler.store(on);
+    Announce("Stage ruler: reticle sweeps +-640 stage units", on);
 }
 
 void ToggleCrosshairMove() {

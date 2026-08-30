@@ -27,13 +27,18 @@ constexpr double kOffScreen = 10000.0;
 
 CrosshairStageOffset ComputeCrosshairStageOffset(bool haveAim, bool aimValid,
                                                  float aimNdcX, float aimNdcY,
-                                                 float frustumRight, float frustumTop) {
+                                                 double viewportAspect) {
     if (!haveAim) return {0.0, 0.0};
     if (!aimValid) return {kOffScreen, 0.0};
+    if (!(viewportAspect > 0.0)) return {0.0, 0.0};
 
-    // aimValid already established both frustum extents are positive.
-    const double aspect = static_cast<double>(frustumRight) / frustumTop;
-    const double halfWidth = kStageHalfHeight * aspect;
+    // The VIEWPORT's aspect, not the camera frustum's. The two agree on builds
+    // that support the display's aspect, and do not on builds that predate
+    // 21:9/32:9 support, which render a narrower frustum stretched across the
+    // full width. What the stage is laid out against is the window either way,
+    // and aimNdcX is already a fraction of the rendered width whatever the
+    // frustum was, so this is the only place the screen shape belongs.
+    const double halfWidth = kStageHalfHeight * viewportAspect;
 
     CrosshairStageOffset out;
     out.dx = static_cast<double>(aimNdcX)

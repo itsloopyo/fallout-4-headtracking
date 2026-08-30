@@ -111,7 +111,7 @@ float RefDistance(const float* a, const float* b) {
 }
 
 void RefStageOffset(bool haveSnap, bool aimValid, float ndcX, float ndcY,
-                    float frustumRight, float frustumTop, double& dx, double& dy) {
+                    double aspect, double& dx, double& dy) {
     constexpr double kStageHalfHeight = 360.0;
     constexpr double kStageHalfWidth = 640.0;
     constexpr double kOffScreen = 10000.0;
@@ -123,7 +123,6 @@ void RefStageOffset(bool haveSnap, bool aimValid, float ndcX, float ndcY,
     } else if (!aimValid) {
         dx = kOffScreen;
     } else {
-        const double aspect = static_cast<double>(frustumRight) / frustumTop;
         const double halfWidth = kStageHalfHeight * aspect;
         dx = static_cast<double>(ndcX)
              * (halfWidth > kStageHalfWidth ? halfWidth : kStageHalfWidth);
@@ -408,13 +407,15 @@ void CrosshairStageOffsetMatchesPreExtraction() {
             for (float ndcX : kNdc) {
                 for (float ndcY : kNdc) {
                     for (const auto& frustum : kFrustums) {
+                        const double aspect =
+                            static_cast<double>(frustum[0]) / frustum[1];
                         double wantDx = 0.0;
                         double wantDy = 0.0;
                         RefStageOffset(haveSnap != 0, aimValid != 0, ndcX, ndcY,
-                                       frustum[0], frustum[1], wantDx, wantDy);
+                                       aspect, wantDx, wantDy);
 
                         const CrosshairStageOffset got = ComputeCrosshairStageOffset(
-                            haveSnap != 0, aimValid != 0, ndcX, ndcY, frustum[0], frustum[1]);
+                            haveSnap != 0, aimValid != 0, ndcX, ndcY, aspect);
                         if (got.dx != wantDx || got.dy != wantDy) matches = false;
                     }
                 }
@@ -426,25 +427,39 @@ void CrosshairStageOffsetMatchesPreExtraction() {
     // Below 16:9 the horizontal half-stage stays pinned at 640, above it grows
     // with the aspect. Both branches matter - this is the bug that shipped once.
     const CrosshairStageOffset narrow =
-        ComputeCrosshairStageOffset(true, true, 1.0f, 0.0f, 0.6f, 0.45f);
+        ComputeCrosshairStageOffset(true, true, 1.0f, 0.0f, 0.6 / 0.45);
     Check(narrow.dx == 640.0, "a 4:3 viewport uses the flat 640 half-stage");
     const CrosshairStageOffset wide =
-        ComputeCrosshairStageOffset(true, true, 1.0f, 0.0f, 1.61781f, 0.45501f);
+        ComputeCrosshairStageOffset(true, true, 1.0f, 0.0f, 1.61781 / 0.45501);
     Check(wide.dx > 640.0, "a 32:9 viewport widens the half-stage past 640");
 
     // Scaleform's Y points down, so an aim above centre needs a negative dy.
     const CrosshairStageOffset above =
-        ComputeCrosshairStageOffset(true, true, 0.0f, 0.5f, 1.0f, 0.5625f);
+        ComputeCrosshairStageOffset(true, true, 0.0f, 0.5f, 1.0 / 0.5625);
     Check(above.dy == -180.0, "an aim above centre maps to a negative stage Y");
 
     const CrosshairStageOffset noAim =
-        ComputeCrosshairStageOffset(false, true, 0.9f, 0.9f, 1.0f, 0.5625f);
+        ComputeCrosshairStageOffset(false, true, 0.9f, 0.9f, 1.0 / 0.5625);
     Check(noAim.dx == 0.0 && noAim.dy == 0.0,
           "no snapshot restores the authored position");
 
     const CrosshairStageOffset hidden =
-        ComputeCrosshairStageOffset(true, false, 0.0f, 0.0f, 1.0f, 0.5625f);
+        ComputeCrosshairStageOffset(true, false, 0.0f, 0.0f, 1.0 / 0.5625);
     Check(hidden.dx == 10000.0, "an invalid aim parks the reticle off-screen");
+
+    // The 1.10.163 case: a 16:9 camera frustum stretched across a 32:9 window.
+    // The stage follows the WINDOW, so this must widen exactly as a real 32:9
+    // frustum would - reading the frustum here collapsed dx onto the 640 floor
+    // and put the reticle at half the offset it needed.
+    const CrosshairStageOffset stretched =
+        ComputeCrosshairStageOffset(true, true, 1.0f, 0.0f, 5120.0 / 1440.0);
+    Check(stretched.dx == 1280.0,
+          "a 32:9 window widens the half-stage whatever the frustum says");
+
+    const CrosshairStageOffset noAspect =
+        ComputeCrosshairStageOffset(true, true, 1.0f, 0.0f, 0.0);
+    Check(noAspect.dx == 0.0 && noAspect.dy == 0.0,
+          "an unreadable window leaves the crosshair where the game authored it");
 }
 
 }  // namespace
