@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: MIT
 
 #include "pch.h"
+
+#include <cstring>
+
 #include "crosshair_hook.h"
 #include "diagnostics/ab_switches.h"
 #include "camera_snapshot.h"
@@ -63,6 +66,13 @@ constexpr size_t kScopeBufferSize = 0x260;
 double g_clipBaseX = 0.0;
 double g_clipBaseY = 0.0;
 bool g_clipBaseValid = false;
+
+// Whether this build caps the HUD movie's horizontal scale at H/720 (next-gen)
+// or stretches it as W/1280 (1.10.163 and earlier). Set from the build the
+// crosshair patterns matched, because the codegen that is being hooked here IS
+// the HUD code whose scaling behaviour differs. Only wider than 16:9 tells the
+// two apart, so it cannot be measured from the window.
+bool g_horizontalScaleCapped = true;
 
 // Lets the untracked path leave the HUD alone rather than writing the same zero
 // offset through Scaleform on every crosshair tick for the whole session.
@@ -178,7 +188,7 @@ void __fastcall HUDCrosshairUpdateHook(void* thisCrosshair) {
         ? StageRulerOffset()
         : (AbSwitches::CrosshairMoveEnabled()
                ? ComputeCrosshairStageOffset(haveSnap, snap.aimValid, snap.aimNdcX, snap.aimNdcY,
-                                             viewportAspect)
+                                             viewportAspect, g_horizontalScaleCapped)
                : CrosshairStageOffset{});
 
     const bool wantMoved = (offset.dx != 0.0 || offset.dy != 0.0);
@@ -265,6 +275,16 @@ void InstallCrosshairHook(const TextSection& text, uintptr_t moduleBase) {
               static_cast<unsigned long long>(scopeInitFn - moduleBase), initVariant,
               static_cast<unsigned long long>(scopeApplyFn - moduleBase),
               static_cast<unsigned long long>(crosshairFn - moduleBase), updateVariant);
+
+    // 1.10.163 stretches the HUD movie across the window; next-gen scales it
+    // uniformly and widens the stage instead. The reticle's X offset differs by
+    // the ratio of the two above 16:9 (2.03x at 32:9), so the model is picked
+    // from the build rather than assumed.
+    g_horizontalScaleCapped = std::strcmp(updateVariant, "1.10.163") != 0;
+    Log::Line("crosshair: HUD stage is %s - half-stage width is %s",
+              g_horizontalScaleCapped ? "scaled uniformly (next-gen)"
+                                      : "stretched to the window (1.10.163)",
+              g_horizontalScaleCapped ? "360*aspect above 16:9" : "a flat 640");
 
     if (!g_crosshairHook.Install(reinterpret_cast<void*>(crosshairFn),
                                  reinterpret_cast<void*>(&HUDCrosshairUpdateHook),

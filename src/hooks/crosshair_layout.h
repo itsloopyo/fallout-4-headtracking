@@ -20,15 +20,17 @@ struct CrosshairStageOffset {
 // the same thing that happens naturally once the aim crosses the edge of the
 // frustum.
 //
-// viewportAspect is the game client area's width over its height. It used to be
-// derived from the camera frustum, which tracks the client aspect exactly on a
-// build that supports the display's shape (measured 1.6441/0.4550 against a
-// 5120x1417 client) and does NOT on one that predates 21:9/32:9 support, where
-// a narrower frustum is stretched over the full width. The frustum still sets
-// aimNdcX/aimNdcY, so field of view is accounted for there; only the stage's
-// own width needs the window.
+// viewportAspect is the game client area's width over its height. It is taken
+// from the window rather than the camera frustum: aimNdcX is already a fraction
+// of the rendered width whatever the frustum was, so the window is the only
+// place the screen's shape belongs.
+//
+// horizontalScaleCapped says which of the two HUD scaling behaviours this build
+// has - see the measurements in crosshair_layout.cpp. It changes nothing at or
+// below 16:9 and doubles the X offset at 32:9, so it cannot be guessed.
 CrosshairStageOffset ComputeCrosshairStageOffset(bool haveAim, bool aimValid,
                                                  float aimNdcX, float aimNdcY,
-                                                 double viewportAspect);
+                                                 double viewportAspect,
+                                                 bool horizontalScaleCapped);
 
 } // namespace Fallout4HT

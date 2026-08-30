@@ -111,7 +111,7 @@ float RefDistance(const float* a, const float* b) {
 }
 
 void RefStageOffset(bool haveSnap, bool aimValid, float ndcX, float ndcY,
-                    double aspect, double& dx, double& dy) {
+                    double aspect, bool capped, double& dx, double& dy) {
     constexpr double kStageHalfHeight = 360.0;
     constexpr double kStageHalfWidth = 640.0;
     constexpr double kOffScreen = 10000.0;
@@ -123,9 +123,9 @@ void RefStageOffset(bool haveSnap, bool aimValid, float ndcX, float ndcY,
     } else if (!aimValid) {
         dx = kOffScreen;
     } else {
-        const double halfWidth = kStageHalfHeight * aspect;
+        const double widened = kStageHalfHeight * aspect;
         dx = static_cast<double>(ndcX)
-             * (halfWidth > kStageHalfWidth ? halfWidth : kStageHalfWidth);
+             * ((capped && widened > kStageHalfWidth) ? widened : kStageHalfWidth);
         dy = -static_cast<double>(ndcY) * kStageHalfHeight;
     }
 }
@@ -409,14 +409,17 @@ void CrosshairStageOffsetMatchesPreExtraction() {
                     for (const auto& frustum : kFrustums) {
                         const double aspect =
                             static_cast<double>(frustum[0]) / frustum[1];
-                        double wantDx = 0.0;
-                        double wantDy = 0.0;
-                        RefStageOffset(haveSnap != 0, aimValid != 0, ndcX, ndcY,
-                                       aspect, wantDx, wantDy);
+                        for (int capped = 0; capped < 2; ++capped) {
+                            double wantDx = 0.0;
+                            double wantDy = 0.0;
+                            RefStageOffset(haveSnap != 0, aimValid != 0, ndcX, ndcY,
+                                           aspect, capped != 0, wantDx, wantDy);
 
-                        const CrosshairStageOffset got = ComputeCrosshairStageOffset(
-                            haveSnap != 0, aimValid != 0, ndcX, ndcY, aspect);
-                        if (got.dx != wantDx || got.dy != wantDy) matches = false;
+                            const CrosshairStageOffset got = ComputeCrosshairStageOffset(
+                                haveSnap != 0, aimValid != 0, ndcX, ndcY, aspect,
+                                capped != 0);
+                            if (got.dx != wantDx || got.dy != wantDy) matches = false;
+                        }
                     }
                 }
             }
@@ -424,40 +427,56 @@ void CrosshairStageOffsetMatchesPreExtraction() {
     }
     Check(matches, "stage offset is unchanged across the aspect and NDC sweep");
 
-    // Below 16:9 the horizontal half-stage stays pinned at 640, above it grows
-    // with the aspect. Both branches matter - this is the bug that shipped once.
+    // On the capped build the half-stage is pinned at 640 below 16:9 and grows
+    // with the aspect above it. Both branches matter - this is the bug that
+    // shipped once.
     const CrosshairStageOffset narrow =
-        ComputeCrosshairStageOffset(true, true, 1.0f, 0.0f, 0.6 / 0.45);
+        ComputeCrosshairStageOffset(true, true, 1.0f, 0.0f, 0.6 / 0.45, true);
     Check(narrow.dx == 640.0, "a 4:3 viewport uses the flat 640 half-stage");
     const CrosshairStageOffset wide =
-        ComputeCrosshairStageOffset(true, true, 1.0f, 0.0f, 1.61781 / 0.45501);
-    Check(wide.dx > 640.0, "a 32:9 viewport widens the half-stage past 640");
+        ComputeCrosshairStageOffset(true, true, 1.0f, 0.0f, 1.61781 / 0.45501, true);
+    Check(wide.dx > 640.0, "a 32:9 viewport widens the capped half-stage past 640");
 
-    // Scaleform's Y points down, so an aim above centre needs a negative dy.
+    // Scaleform's Y points down, so an aim above centre needs a negative dy, and
+    // the vertical scale is H/720 on both builds.
     const CrosshairStageOffset above =
-        ComputeCrosshairStageOffset(true, true, 0.0f, 0.5f, 1.0 / 0.5625);
+        ComputeCrosshairStageOffset(true, true, 0.0f, 0.5f, 1.0 / 0.5625, true);
     Check(above.dy == -180.0, "an aim above centre maps to a negative stage Y");
+    const CrosshairStageOffset aboveStretched =
+        ComputeCrosshairStageOffset(true, true, 0.0f, 0.5f, 5120.0 / 1440.0, false);
+    Check(aboveStretched.dy == -180.0, "the stretched build scales Y the same way");
 
     const CrosshairStageOffset noAim =
-        ComputeCrosshairStageOffset(false, true, 0.9f, 0.9f, 1.0 / 0.5625);
+        ComputeCrosshairStageOffset(false, true, 0.9f, 0.9f, 1.0 / 0.5625, true);
     Check(noAim.dx == 0.0 && noAim.dy == 0.0,
           "no snapshot restores the authored position");
 
     const CrosshairStageOffset hidden =
-        ComputeCrosshairStageOffset(true, false, 0.0f, 0.0f, 1.0 / 0.5625);
+        ComputeCrosshairStageOffset(true, false, 0.0f, 0.0f, 1.0 / 0.5625, true);
     Check(hidden.dx == 10000.0, "an invalid aim parks the reticle off-screen");
 
-    // The 1.10.163 case: a 16:9 camera frustum stretched across a 32:9 window.
-    // The stage follows the WINDOW, so this must widen exactly as a real 32:9
-    // frustum would - reading the frustum here collapsed dx onto the 640 floor
-    // and put the reticle at half the offset it needed.
-    const CrosshairStageOffset stretched =
-        ComputeCrosshairStageOffset(true, true, 1.0f, 0.0f, 5120.0 / 1440.0);
-    Check(stretched.dx == 1280.0,
-          "a 32:9 window widens the half-stage whatever the frustum says");
+    // The two builds at 32:9, which is where they part company. Next-gen scales
+    // the movie uniformly and the stage widens to 1280; 1.10.163 stretches it
+    // and the stage stays 640 wide. Applying the capped number on 1.10.163 sent
+    // the reticle twice as far across the screen as the aim had moved.
+    const CrosshairStageOffset cappedWide =
+        ComputeCrosshairStageOffset(true, true, 1.0f, 0.0f, 5120.0 / 1440.0, true);
+    Check(cappedWide.dx == 1280.0, "a 32:9 window widens the next-gen half-stage");
+    const CrosshairStageOffset stretchedWide =
+        ComputeCrosshairStageOffset(true, true, 1.0f, 0.0f, 5120.0 / 1440.0, false);
+    Check(stretchedWide.dx == 640.0,
+          "a 32:9 window leaves the 1.10.163 half-stage at 640");
+
+    // 16:9 is degenerate: both builds scale the movie by the same factor, so the
+    // model must not matter there.
+    const CrosshairStageOffset cappedHd =
+        ComputeCrosshairStageOffset(true, true, 0.7f, 0.0f, 16.0 / 9.0, true);
+    const CrosshairStageOffset stretchedHd =
+        ComputeCrosshairStageOffset(true, true, 0.7f, 0.0f, 16.0 / 9.0, false);
+    Check(cappedHd.dx == stretchedHd.dx, "the two models agree at 16:9");
 
     const CrosshairStageOffset noAspect =
-        ComputeCrosshairStageOffset(true, true, 1.0f, 0.0f, 0.0);
+        ComputeCrosshairStageOffset(true, true, 1.0f, 0.0f, 0.0, true);
     Check(noAspect.dx == 0.0 && noAspect.dy == 0.0,
           "an unreadable window leaves the crosshair where the game authored it");
 }
