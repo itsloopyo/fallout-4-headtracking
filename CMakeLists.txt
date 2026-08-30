@@ -98,6 +98,16 @@ endif()
 # Opt-in unit tests for the mod code that can run outside the game: the config
 # boundary and the head-tracking maths. OFF by default so neither the normal
 # build nor the release packager ever drops a test binary into bin/. Enable with
+option(FALLOUT4_DEV_HOTKEYS "Build the diagnostic hotkeys (developer aid, not for release)" OFF)
+if(FALLOUT4_DEV_HOTKEYS)
+    target_compile_definitions(Fallout4HeadTracking PRIVATE FALLOUT4_DEV_HOTKEYS=1)
+    message(WARNING "FALLOUT4_DEV_HOTKEYS is ON. This build registers twelve "
+                    "reverse-engineering instruments on Ctrl+Shift+D/J/I/K/B/V/X/N/M/W/O "
+                    "and Insert: pose and verdict trace dumps, A/B switches, VATS probes, "
+                    "hardware write watches on the camera root rotations, and a matrix "
+                    "dump that starts a render-audit sampler thread. Do not ship it.")
+endif()
+
 # -DFALLOUT4_BUILD_TESTS=ON, or run 'pixi run test'.
 option(FALLOUT4_BUILD_TESTS "Build Fallout4HeadTracking unit tests" OFF)
 if(FALLOUT4_BUILD_TESTS)

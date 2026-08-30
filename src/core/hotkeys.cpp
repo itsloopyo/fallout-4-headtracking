@@ -16,6 +16,13 @@
 
 #include <cameraunlock/input/chord_hotkeys.h>
 
+// The diagnostic chords and Insert below are reverse-engineering instruments,
+// not controls a player needs. Configure with -DFALLOUT4_DEV_HOTKEYS=ON to
+// re-arm them.
+#ifndef FALLOUT4_DEV_HOTKEYS
+#define FALLOUT4_DEV_HOTKEYS 0
+#endif
+
 namespace Fallout4HT {
 
 bool Hotkeys::Start(const Config& cfg) {
@@ -41,6 +48,7 @@ bool Hotkeys::Start(const Config& cfg) {
     // wrong one with no way to say so from inside the game.
     m_poller.AddHotkey('U', ChordGuarded([] { Mod::Instance().CycleTrackerSource(); }));
 
+#if FALLOUT4_DEV_HOTKEYS
     // Diagnostics are chords too, and for a harder reason than tidiness: F5 is
     // Fallout 4's quicksave and F9 its quickload. Diagnostics sat on both, so
     // arming an instrument saved the game and running an A/B reloaded it - which
@@ -84,6 +92,7 @@ bool Hotkeys::Start(const Config& cfg) {
 
     // Insert is unbound in Fallout 4, so it stays as-is.
     m_poller.AddHotkey(VK_INSERT, [] { DumpCameraMatrices(); ArmRenderAudit(); });
+#endif
 
     if (!m_poller.Start()) {
         Log::Line("ERROR: Hotkey poller failed to start");
@@ -91,9 +100,13 @@ bool Hotkeys::Start(const Config& cfg) {
     }
 
     Log::Line("Hotkeys ready: toggle=0x%02X position=0x%02X yawmode=0x%02X "
-              "+ Ctrl+Shift+Y/G/H/U chords | diagnostics: Ctrl+Shift+D pose trace,"
-              " J extrapolation, I axis isolation, B verdict trace, Insert matrix dump",
+              "+ Ctrl+Shift+Y/G/H/U chords",
               cfg.toggleKey, cfg.positionToggleKey, cfg.yawModeKey);
+#if FALLOUT4_DEV_HOTKEYS
+    Log::Line("Diagnostics: Ctrl+Shift+D pose trace, J extrapolation, "
+              "I axis isolation, K crosshair A/B, B verdict trace, V/X VATS probes, "
+              "N clean-scope A/B, M stage ruler, W/O write watches, Insert matrix dump");
+#endif
 
     m_started = true;
     return true;
