@@ -163,6 +163,19 @@ void WatchWindowPlacement() {
     }
 }
 
+bool WaitForGameWindow(unsigned timeoutMillis) {
+    constexpr DWORD kPollMillis = 250;
+    const DWORD started = GetTickCount();
+    for (;;) {
+        if (FindGameWindow(0)) {
+            Log::Line("game window up after %lu ms", GetTickCount() - started);
+            return true;
+        }
+        if ((GetTickCount() - started) >= timeoutMillis) return false;
+        Sleep(kPollMillis);
+    }
+}
+
 double GetViewportAspect() {
     // Re-read periodically rather than once: the player can change resolution
     // or switch between windowed and fullscreen without restarting, and a stale

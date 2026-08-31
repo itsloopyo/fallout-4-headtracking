@@ -5,6 +5,7 @@
 #include "core/logging.h"
 #include "core/path_utils.h"
 #include "ui/game_window.h"
+#include "game/game_state.h"
 
 #include <cameraunlock/diagnostics/crash_handler.h>
 
@@ -22,9 +23,29 @@ constexpr int kGameModuleWaitAttempts = 100;
 constexpr DWORD kGameModuleWaitMillis = 100;
 
 // The game module being present only means the loader has mapped it, not that
-// the engine has stood itself up. Everything the mod hooks is built during this
-// window.
-constexpr DWORD kGameInitDelayMillis = 2000;
+// the engine has stood itself up. The game's own window is the first thing that
+// says it has, so that is what is waited on rather than a fixed sleep - a sleep
+// is only ever tuned for the machine it was tuned on, and on a slower one every
+// lookup that follows it runs against an engine that is not there yet.
+//
+// The cap is generous because overshooting costs nothing (the wait ends the
+// moment the window appears) while undershooting costs the whole session.
+constexpr unsigned kGameWindowWaitMillis = 120000;
+
+// Settle time after the window appears, before anything is resolved. The window
+// exists slightly before the systems behind it do.
+constexpr DWORD kPostWindowSettleMillis = 2000;
+
+// How often the VATS singleton scan is retried until it lands. It scans the
+// whole .data section, so it runs here rather than on any game thread.
+constexpr DWORD kVatsRetryMillis = 5000;
+
+unsigned __stdcall VatsRetryThread(void*) {
+    for (;;) {
+        if (Fallout4HT::GameState::EnsureVatsSingletonResolved()) return 0;
+        Sleep(kVatsRetryMillis);
+    }
+}
 
 bool WaitForGameModule() {
     for (int attempt = 0; attempt <= kGameModuleWaitAttempts; ++attempt) {
@@ -62,7 +83,12 @@ unsigned __stdcall InitThread(void* lpParam) {
     cameraunlock::diagnostics::InstallCrashHandler();
     Log::Line("Fallout 4 Head Tracking v%s attached to game process", VERSION);
 
-    Sleep(kGameInitDelayMillis);
+    if (!WaitForGameWindow(kGameWindowWaitMillis)) {
+        Log::Line("WARN: no game window after %u ms - carrying on, but anything that needs"
+                  " the window (reticle placement, windowed centring) will pick it up late",
+                  kGameWindowWaitMillis);
+    }
+    Sleep(kPostWindowSettleMillis);
 
     CenterGameWindow();
 
@@ -72,6 +98,13 @@ unsigned __stdcall InitThread(void* lpParam) {
     }
 
     Log::Line("Fallout 4 Head Tracking v%s loaded successfully", VERSION);
+
+    // Nothing resolved at runtime gets one attempt. The VATS singleton may not
+    // exist yet however long the wait above was, so it is retried until it does.
+    if (HANDLE vatsThread = reinterpret_cast<HANDLE>(
+            _beginthreadex(nullptr, 0, VatsRetryThread, nullptr, 0, nullptr))) {
+        CloseHandle(vatsThread);
+    }
 
     // Never returns; keeps windowed mode centred for the life of the process.
     WatchWindowPlacement();

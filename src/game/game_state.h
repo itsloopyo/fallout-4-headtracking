@@ -33,6 +33,12 @@ public:
     // playerCamera is the PlayerCamera the engine is ticking; its current state
     // is what identifies the attack camera.
     static bool IsInGameplay(void* playerCamera);
+
+    // Re-attempt the VATS singleton scan. Returns true once it is resolved, so a
+    // caller polls until it succeeds rather than accepting whatever the first
+    // look happened to find. Scans the whole .data section, so it belongs on a
+    // background thread, never a camera tick.
+    static bool EnsureVatsSingletonResolved();
 };
 
 // The VATS singleton's address, or 0 if it was not resolved. The flag search in

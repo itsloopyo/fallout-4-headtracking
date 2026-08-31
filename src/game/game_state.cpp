@@ -73,28 +73,48 @@ size_t ScanDataForVtable(uintptr_t dataStart, size_t dataSize, uintptr_t vtable,
     return hits;
 }
 
-void ResolveVatsSingleton(HMODULE gameModule, uintptr_t moduleBase) {
+// Where to look, kept so the scan can be repeated. The singleton is a global
+// the engine constructs while it starts up, and nothing tells us when: on one
+// machine its vtable pointer is in .data before the mod finishes initialising,
+// on a slower one it is not there yet. Resolving once and giving up leaves the
+// targeting-menu gate off for the whole session, with one WARN as the only
+// trace - which is exactly what a user report showed.
+HMODULE g_gameModule = nullptr;
+uintptr_t g_moduleBase = 0;
+
+bool ResolveVatsSingleton(bool firstAttempt) {
+    if (g_vatsObject != 0) return true;
+
     cameraunlock::memory::VtableInfo vtInfo{};
-    if (!cameraunlock::memory::FindVtableFromRTTI(gameModule, kRTTI_VATS, vtInfo, 1)) {
-        Log::Line("WARN: game state: no VATS RTTI - the targeting-menu flag cannot be"
-                  " anchored to the singleton");
-        return;
+    if (!cameraunlock::memory::FindVtableFromRTTI(g_gameModule, kRTTI_VATS, vtInfo, 1)) {
+        if (firstAttempt) {
+            Log::Line("WARN: game state: no VATS RTTI - the targeting-menu flag cannot be"
+                      " anchored to the singleton");
+        }
+        return false;
     }
 
     uintptr_t dataStart = 0;
     size_t dataSize = 0;
-    if (!FindSection(moduleBase, ".data", dataStart, dataSize)) {
-        Log::Line("WARN: game state: no .data section - VATS singleton not resolved");
-        return;
+    if (!FindSection(g_moduleBase, ".data", dataStart, dataSize)) {
+        if (firstAttempt) {
+            Log::Line("WARN: game state: no .data section - VATS singleton not resolved");
+        }
+        return false;
     }
 
     uintptr_t found = 0;
     const size_t hits = ScanDataForVtable(dataStart, dataSize, vtInfo.vtable_address, found);
     if (hits != 1) {
-        Log::Line("WARN: game state: VATS vtable module+0x%llX appears in .data %zu times,"
-                  " not once - singleton not resolved",
-                  static_cast<unsigned long long>(vtInfo.vtable_address - moduleBase), hits);
-        return;
+        // Only the first attempt says anything: the expected case is that the
+        // object does not exist yet, and a line per retry would bury the log.
+        if (firstAttempt) {
+            Log::Line("game state: VATS vtable module+0x%llX appears in .data %zu times,"
+                      " not once - the singleton is not constructed yet, retrying",
+                      static_cast<unsigned long long>(vtInfo.vtable_address - g_moduleBase),
+                      hits);
+        }
+        return false;
     }
 
     g_vatsObject = found;
@@ -102,9 +122,10 @@ void ResolveVatsSingleton(HMODULE gameModule, uintptr_t moduleBase) {
     Log::Line("game state: VATS singleton at module+0x%llX (vtable module+0x%llX), mode byte"
               " at +0x%llX - head tracking steps aside for VATS so it frames and labels the"
               " target, not the head",
-              static_cast<unsigned long long>(found - moduleBase),
-              static_cast<unsigned long long>(vtInfo.vtable_address - moduleBase),
+              static_cast<unsigned long long>(found - g_moduleBase),
+              static_cast<unsigned long long>(vtInfo.vtable_address - g_moduleBase),
               static_cast<unsigned long long>(kVatsModeOffset));
+    return true;
 }
 
 // PlayerCamera's VATS state, resolved by RTTI. Zero means it was not found, and
@@ -162,11 +183,16 @@ bool GameState::Initialize() {
         return false;
     }
 
+    g_gameModule = gameModule;
+    g_moduleBase = moduleBase;
+
     ResolveVatsCameraState(gameModule);
-    ResolveVatsSingleton(gameModule, moduleBase);
+    ResolveVatsSingleton(true);
 
     return true;
 }
+
+bool GameState::EnsureVatsSingletonResolved() { return ResolveVatsSingleton(false); }
 
 bool GameState::IsInGameplay(void* playerCamera) {
     if (IsVatsAttackCamera(playerCamera)) return false;

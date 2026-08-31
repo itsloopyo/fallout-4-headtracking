@@ -4,6 +4,14 @@
 
 namespace Fallout4HT {
 
+// Block until the game has a window, which is the only readiness signal this
+// mod has that the engine is actually up. Returns false if it never appeared
+// within the timeout. A fixed sleep was what this replaced, and it was tuned on
+// machines where the window exists two seconds in; on a slower one the window
+// was still absent at thirteen seconds and every one-shot lookup that followed
+// missed, silently, for the whole session.
+bool WaitForGameWindow(unsigned timeoutMillis);
+
 // Centre the game window once, at startup, if it is in true windowed mode.
 void CenterGameWindow();
 
