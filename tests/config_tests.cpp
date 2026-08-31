@@ -220,6 +220,23 @@ void SaveLoadRoundTrip() {
     DeleteFileA(path.c_str());
 }
 
+// There is no separate LimitYDown key in this mod's INI: the single configured
+// vertical limit is meant to apply both up and down, the way
+// PositionSettings::Symmetric does. Left unmirrored, limit_y_down silently
+// pins at the PositionSettings struct default (0.20m) no matter what LimitY
+// is set to, so raising LimitY widens upward travel only.
+void BuildPositionSettingsMirrorsLimitYDown() {
+    std::printf("Config::BuildPositionSettings mirrors LimitY into limit_y_down\n");
+
+    Config c;
+    c.positionLimitY = 0.55f;
+    const cameraunlock::PositionSettings settings = c.BuildPositionSettings();
+
+    Check(std::fabs(settings.limit_y - 0.55f) < 1e-6f, "limit_y takes the configured value");
+    Check(std::fabs(settings.limit_y_down - 0.55f) < 1e-6f,
+          "limit_y_down mirrors the configured LimitY rather than staying at the struct default");
+}
+
 }  // namespace
 
 int main() {
@@ -230,6 +247,7 @@ int main() {
     LoadSanitizesHostileIni();
     LoadMissingFileKeepsDefaults();
     SaveLoadRoundTrip();
+    BuildPositionSettingsMirrorsLimitYDown();
 
     if (g_failures == 0) {
         std::printf("All tests passed!\n");

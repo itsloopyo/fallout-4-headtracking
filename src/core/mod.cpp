@@ -200,20 +200,12 @@ void Mod::ConfigureSession() {
     if (!m_config.positionEnabled) {
         m_session.SetMode(cameraunlock::TrackingMode::RotationOnly);
     }
-    // Field-by-field rather than the positional constructor: the argument list
-    // is long enough that a silent rebinding onto a neighbouring parameter
-    // would compile clean and only show up as wrong position limits.
-    cameraunlock::PositionSettings posSettings;
-    posSettings.sensitivity_x = m_config.positionSensitivityX;
-    posSettings.sensitivity_y = m_config.positionSensitivityY;
-    posSettings.sensitivity_z = m_config.positionSensitivityZ;
-    posSettings.limit_x = m_config.positionLimitX;
-    posSettings.limit_y = m_config.positionLimitY;
-    posSettings.limit_z = m_config.positionLimitZ;
-    posSettings.limit_z_back = m_config.positionLimitZBack;
-    posSettings.invert_x = m_config.positionInvertX;
-    posSettings.invert_y = m_config.positionInvertY;
-    posSettings.invert_z = m_config.positionInvertZ;
+    // Built by Config::BuildPositionSettings() rather than field-by-field here:
+    // the argument list is long enough that a silent rebinding onto a
+    // neighbouring parameter would compile clean and only show up as wrong
+    // position limits, and the single-source-of-truth builder is what a unit
+    // test can exercise without a live session.
+    const cameraunlock::PositionSettings posSettings = m_config.BuildPositionSettings();
     m_session.GetPositionProcessor().SetSettings(posSettings);
 
     // After SetSettings, never before: the session hands both values to the

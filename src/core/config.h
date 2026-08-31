@@ -66,6 +66,13 @@ struct Config {
     bool Save(const char* path) const;
     void SetDefaults();
     void Validate();
+
+    // The single configured vertical limit (positionLimitY) mirrored into both
+    // PositionSettings::limit_y and limit_y_down, the way PositionSettings::Symmetric
+    // does. There is no separate downward-limit key here; leaving limit_y_down unset
+    // pins it at the struct default (0.20m) regardless of positionLimitY, so raising
+    // LimitY would widen upward travel only and leave downward travel unchanged.
+    cameraunlock::PositionSettings BuildPositionSettings() const;
 };
 
 } // namespace Fallout4HT

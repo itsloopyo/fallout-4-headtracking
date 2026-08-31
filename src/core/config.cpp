@@ -188,4 +188,20 @@ bool Config::Save(const char* path) const {
     return true;
 }
 
+cameraunlock::PositionSettings Config::BuildPositionSettings() const {
+    cameraunlock::PositionSettings posSettings;
+    posSettings.sensitivity_x = positionSensitivityX;
+    posSettings.sensitivity_y = positionSensitivityY;
+    posSettings.sensitivity_z = positionSensitivityZ;
+    posSettings.limit_x = positionLimitX;
+    posSettings.limit_y = positionLimitY;
+    posSettings.limit_y_down = positionLimitY;
+    posSettings.limit_z = positionLimitZ;
+    posSettings.limit_z_back = positionLimitZBack;
+    posSettings.invert_x = positionInvertX;
+    posSettings.invert_y = positionInvertY;
+    posSettings.invert_z = positionInvertZ;
+    return posSettings;
+}
+
 } // namespace Fallout4HT
