@@ -9,6 +9,9 @@
 // pulled in through the precompiled header.
 #include "constants.h"
 
+#include <cameraunlock/data/position_settings.h>
+#include <cameraunlock/math/smoothing_utils.h>
+
 namespace Fallout4HT {
 
 struct Config {
@@ -25,8 +28,8 @@ struct Config {
     // machine needs none of it - localSmoothing is 0.0 and nothing floors it -
     // while a phone on WiFi jitters over the network, which is what
     // remoteSmoothing is for. Higher trades crispness for noise rejection.
-    float localSmoothing = 0.0f;
-    float remoteSmoothing = 0.15f;
+    float localSmoothing = static_cast<float>(cameraunlock::math::kDefaultLocalSmoothing);
+    float remoteSmoothing = static_cast<float>(cameraunlock::math::kDefaultRemoteSmoothing);
 
     // Hotkeys (Virtual Key codes)
     int toggleKey = DEFAULT_TOGGLE_KEY;
@@ -37,10 +40,10 @@ struct Config {
     float positionSensitivityX = 1.0f;
     float positionSensitivityY = 1.0f;
     float positionSensitivityZ = 1.0f;
-    float positionLimitX = 0.30f;
-    float positionLimitY = 0.20f;
-    float positionLimitZ = 0.40f;
-    float positionLimitZBack = 0.10f;
+    float positionLimitX = cameraunlock::PositionSettings{}.limit_x;
+    float positionLimitY = cameraunlock::PositionSettings{}.limit_y;
+    float positionLimitZ = cameraunlock::PositionSettings{}.limit_z;
+    float positionLimitZBack = cameraunlock::PositionSettings{}.limit_z_back;
     // X stays inverted: a phone tracker looks at the player through its front
     // camera, so its x runs the other way round, which is what this setting is
     // for. Its limit is symmetric, so inverting costs nothing.
