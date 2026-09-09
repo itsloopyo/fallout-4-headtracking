@@ -14,6 +14,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   session.
 
 ### Fixed
+- Head tracking now works with the Xbox/Game Pass build of Fallout 4 1.11.240.
+- The installer finds a Game Pass copy of the game. It reads the Xbox app's own
+  install folders off every drive and identifies the game by its executable, so
+  a library on any drive is found without being pointed at it.
 - VATS body-part percentages sit on the target again instead of being offset by
   however far the head is turned. The gate that takes the head pose off before
   VATS freezes the game thread was pinned to a per-build address, so the Fallout

@@ -1,6 +1,7 @@
 #!/usr/bin/env pwsh
 #Requires -Version 5.1
-# Dev deploy to EVERY Fallout 4 install on this machine (see find-installs.ps1).
+# Dev deploy to EVERY Fallout 4 install on this machine (see find-installs.ps1) -
+# Steam, GOG and Game Pass copies alike.
 # Pass a path to scripts/deploy.ps1 directly to target a single one.
 
 param(

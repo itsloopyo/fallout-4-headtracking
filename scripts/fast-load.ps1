@@ -9,7 +9,11 @@
 # Reversible:  scripts\fast-load.ps1 -Restore
 #
 # Game path resolution order:
-#   -GamePath arg  ->  Find-GamePath (FALLOUT_4_PATH, then every Steam library).
+#   -GamePath arg  ->  every install find-installs.ps1 reports.
+# The videos live inside each install, so a machine with the game from two
+# stores needs both done: fast-loading one and launching the other looks
+# exactly like the intro skip not working. The ini is per user, so it is
+# written once whatever the install count.
 
 param(
     [string]$GamePath,
@@ -20,22 +24,17 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $projectRoot = Split-Path -Parent $PSScriptRoot
-Import-Module (Join-Path $projectRoot 'cameraunlock-core\powershell\GamePathDetection.psm1') -Force
 
-function Resolve-GamePath {
+function Resolve-GamePaths {
     param([string]$Given)
     if ($Given) {
         if (-not (Test-Path $Given)) { throw "GamePath does not exist: $Given" }
-        return (Resolve-Path $Given).Path
+        return @((Resolve-Path $Given).Path)
     }
-    $found = Find-GamePath -GameId 'fallout-4'
-    if (-not $found) { throw "Could not locate Fallout 4. Pass -GamePath or set FALLOUT_4_PATH." }
-    return (Resolve-Path $found).Path
+    return @(& (Join-Path $PSScriptRoot 'find-installs.ps1'))
 }
 
-$gameRoot = Resolve-GamePath -Given $GamePath
-$videoDir = Join-Path $gameRoot 'Data\Video'
-if (-not (Test-Path $videoDir)) { throw "Video folder not found: $videoDir" }
+$gameRoots = Resolve-GamePaths -Given $GamePath
 
 # Files that play before the game is interactive. MainMenuLoop is the
 # looping background behind the main menu - skipping it leaves the menu on
@@ -48,19 +47,46 @@ $targets = @(
 
 $docsIni = Join-Path $env:USERPROFILE 'Documents\My Games\Fallout 4\Fallout4Custom.ini'
 
-if ($Restore) {
-    Write-Host "Restoring startup videos in $videoDir" -ForegroundColor Cyan
-    foreach ($name in $targets) {
-        $disabled = Join-Path $videoDir ($name + '.disabled')
-        $original = Join-Path $videoDir $name
-        if (Test-Path $disabled) {
-            if (Test-Path $original) { throw "Both $name and $name.disabled exist - resolve manually." }
-            Move-Item $disabled $original
-            Write-Host "  restored $name"
-        } else {
-            Write-Host "  (skip)   $name not disabled" -ForegroundColor DarkGray
+Write-Host "Fallout 4 installs found: $($gameRoots.Count)" -ForegroundColor Cyan
+
+foreach ($gameRoot in $gameRoots) {
+    $videoDir = Join-Path $gameRoot 'Data\Video'
+    if (-not (Test-Path $videoDir)) { throw "Video folder not found: $videoDir" }
+
+    if ($Restore) {
+        Write-Host "Restoring startup videos in $videoDir" -ForegroundColor Cyan
+        foreach ($name in $targets) {
+            $disabled = Join-Path $videoDir ($name + '.disabled')
+            $original = Join-Path $videoDir $name
+            if (Test-Path $disabled) {
+                if (Test-Path $original) { throw "Both $name and $name.disabled exist - resolve manually." }
+                Move-Item $disabled $original
+                Write-Host "  restored $name"
+            } else {
+                Write-Host "  (skip)   $name not disabled" -ForegroundColor DarkGray
+            }
         }
+        continue
     }
+
+    Write-Host "Disabling startup videos in $videoDir" -ForegroundColor Cyan
+    foreach ($name in $targets) {
+        $original = Join-Path $videoDir $name
+        $disabled = Join-Path $videoDir ($name + '.disabled')
+        if (Test-Path $disabled) {
+            Write-Host "  (already)  $name" -ForegroundColor DarkGray
+            continue
+        }
+        if (-not (Test-Path $original)) {
+            Write-Host "  (missing)  $name" -ForegroundColor Yellow
+            continue
+        }
+        Move-Item $original $disabled
+        Write-Host "  disabled   $name"
+    }
+}
+
+if ($Restore) {
     if (Test-Path $docsIni) {
         $backup = $docsIni + '.fastload-backup'
         if (Test-Path $backup) {
@@ -73,22 +99,6 @@ if ($Restore) {
     }
     Write-Host "Done." -ForegroundColor Green
     return
-}
-
-Write-Host "Disabling startup videos in $videoDir" -ForegroundColor Cyan
-foreach ($name in $targets) {
-    $original = Join-Path $videoDir $name
-    $disabled = Join-Path $videoDir ($name + '.disabled')
-    if (Test-Path $disabled) {
-        Write-Host "  (already)  $name" -ForegroundColor DarkGray
-        continue
-    }
-    if (-not (Test-Path $original)) {
-        Write-Host "  (missing)  $name" -ForegroundColor Yellow
-        continue
-    }
-    Move-Item $original $disabled
-    Write-Host "  disabled   $name"
 }
 
 $iniDir = Split-Path -Parent $docsIni

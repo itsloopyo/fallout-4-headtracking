@@ -28,16 +28,18 @@ test = "powershell -ExecutionPolicy Bypass -File scripts/run-tests.ps1"
 build = { cmd = "cmake --build build --config Debug", depends-on = ["setup"] }
 build-release = { cmd = "cmake --build build --config Release", depends-on = ["setup"] }
 
-# deploy-all, not deploy: Fallout 4 is commonly owned on Steam and GOG at once,
-# and deploy.ps1 resolves the single highest-priority install. Deploying to one
-# store while launching the other looks exactly like a fix that did not work.
+# deploy-all, not deploy: Fallout 4 is commonly owned on more than one of Steam,
+# GOG and Game Pass at once, and deploy.ps1 resolves the single highest-priority
+# install. Deploying to one store while launching another looks exactly like a
+# fix that did not work.
 install = { cmd = "powershell -ExecutionPolicy Bypass -File scripts/deploy-all.ps1 Release", depends-on = ["build-release"] }
 # Every install, not just the first one find-game.ps1 returns: Fallout 4 is
-# commonly installed from Steam and GOG at once, and uninstall.cmd resolves a
-# single path. The wrapper passes /y (pixi run allocates no TTY, and the shared
-# uninstall body ends with `if not defined YES_FLAG ( echo. & pause )` - that
-# pause reads an invalid handle and aborts the task) and /force (a dev deploy
-# writes no state file, so the dxgi.dll proxy would otherwise be left behind).
+# commonly installed from more than one of Steam, GOG and Game Pass at once, and
+# uninstall.cmd resolves a single path. The wrapper passes /y (pixi run
+# allocates no TTY, and the shared uninstall body ends with `if not defined
+# YES_FLAG ( echo. & pause )` - that pause reads an invalid handle and aborts
+# the task) and /force (a dev deploy writes no state file, so the dxgi.dll
+# proxy would otherwise be left behind).
 uninstall = "powershell -ExecutionPolicy Bypass -File scripts/uninstall-all.ps1"
 
 # No PowerShell variables in an inline pixi cmd: pixi's own shell expands $d

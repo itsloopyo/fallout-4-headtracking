@@ -10,6 +10,7 @@ An unofficial head tracking mod for Fallout 4 that moves the view with your head
 
 - **Decoupled look and aim** - head tracking moves the camera; aim stays on your mouse/controller
 - **6DOF positional tracking** - lean and peek with head position
+- **Works with any OpenTrack compatible tracker** - free options available for PC, iOS and Android
 
 ## Requirements
 
@@ -36,6 +37,16 @@ yourself. Either pass the path as an argument:
 
 ```powershell
 install.cmd "D:\Games\Steam\steamapps\common\Fallout 4"
+```
+
+The installer detects Steam, GOG and Game Pass copies, and stops at the first
+it finds in that order. If you own the game on more than one of them, point it
+at the one you actually play. A Game Pass copy lives in `XboxGames` on whichever
+drive you told the Xbox app to install to, and the folder to pass is the
+`Content` one inside it:
+
+```powershell
+install.cmd "D:\XboxGames\Fallout 4\Content"
 ```
 
 Or set the `FALLOUT_4_PATH` environment variable before running it:

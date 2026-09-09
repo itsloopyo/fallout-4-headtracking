@@ -3,7 +3,7 @@
 # Dev uninstall: strips the mod from EVERY Fallout 4 install on this machine.
 #
 # uninstall.cmd resolves a single path (see find-installs.ps1), so on its own it
-# leaves the other copy of the game modded. /force is unconditional here because
+# leaves every other copy of the game modded. /force is unconditional here because
 # a dev deploy writes no state file, and without it the dxgi.dll proxy stays.
 
 Set-StrictMode -Version Latest

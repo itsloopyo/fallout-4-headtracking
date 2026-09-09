@@ -236,6 +236,13 @@ const uint8_t kScopeInitPattern110163[] = {
     0x4C, 0x8D, 0x41, 0x10, 0x49, 0x89, 0x40, 0x60, 0x49, 0x89, 0x40, 0x68,
     0x49, 0x89, 0x40, 0x70, 0x49, 0x89, 0x40, 0x78
 };
+
+const uint8_t kScopeInitPatternXbox[] = {
+    0x40, 0x53, 0x48, 0x83, 0xEC, 0x00, 0x48, 0x89, 0x11, 0x0F, 0x57,
+    0xC0, 0x0F, 0x11, 0x41, 0x70, 0x48, 0x8B, 0xD9, 0x33, 0xC0,
+    0x0F, 0x11, 0x81, 0x80, 0x00, 0x00, 0x00
+};
+
 // Crosshair update on 1.10.163: slot 4 of the HUDCrosshair vtable, which RTTI
 // puts at RVA 0x2D150F8 on that build. Same shape as the newer build's - frame,
 // then a `movzx` of a global byte, then `this` into a saved register - and it
@@ -252,10 +259,15 @@ const uint8_t kCrosshairUpdatePattern110163[] = {
 
 void InstallCrosshairHook(const TextSection& text, uintptr_t moduleBase) {
     const char* initVariant = "none";
-    const uintptr_t scopeInitFn = FindUniquePatternEither(
+    uintptr_t scopeInitFn = FindUniquePatternEither(
         text, kScopeInitPattern, "xxxxxxxxx?xxxxxxxxxxx????", "1.11",
         kScopeInitPattern110163, "xxxxx?xxxxxxxxxxxxxxxxxxxxxxxxx", "1.10.163",
         "scope init", initVariant);
+    if (!scopeInitFn) {
+        scopeInitFn = FindUniquePattern(text, kScopeInitPatternXbox,
+                                       "xxxxx?xxxxxxxxxxxxxxxxxxxxxx", "scope init Xbox");
+        if (scopeInitFn) initVariant = "Xbox 1.11.240";
+    }
     const uintptr_t scopeApplyFn = FindUniquePattern(
         text, kScopeApplyPattern, "xxxxxxxxxxx????xxx", "scope apply");
     const char* updateVariant = "none";

@@ -55,8 +55,7 @@ auto WithCleanCamera(Fn call) -> decltype(call()) {
 // first-person bullet direction from this same matrix, and a decompile of this
 // function shows the same read feeding the launch angles.
 //
-// Resolved by its 22-byte prologue, verified unique in .text - this function
-// carries no RTTI, so a pattern is the only anchor that survives a patch.
+// This function carries no RTTI; each build's pattern must be unique in .text.
 // ---------------------------------------------------------------------------
 // Return type is the full register rather than bool: a decompile shows the
 // function only ever sets AL and leaves the rest of RAX as it found it, so
@@ -256,6 +255,12 @@ const uint8_t kLaunchPattern110163[] = {
     0x00, 0x48, 0x8B, 0xF9, 0x48, 0x8B, 0x49, 0x20, 0x48, 0x85, 0xC9
 };
 
+const uint8_t kLaunchPatternXbox[] = {
+    0x4C, 0x8B, 0xDC, 0x55, 0x57, 0x41, 0x54, 0x49, 0x8D, 0x6B, 0x00,
+    0x48, 0x81, 0xEC, 0x00, 0x00, 0x00, 0x00, 0x48, 0x8B, 0xF9, 0x32,
+    0xC0, 0x48, 0x8B, 0x49, 0x20, 0x48, 0x85, 0xC9
+};
+
 // ---------------------------------------------------------------------------
 // THE AUTO-AIM SOLVER.
 //
@@ -307,14 +312,27 @@ const uint8_t kAutoAimPattern[] = {
     0x8B, 0x01
 };
 
+const uint8_t kAutoAimPatternXbox[] = {
+    0x40, 0x55, 0x53, 0x56, 0x57, 0x48, 0x8D, 0xAC, 0x24, 0x00, 0x00,
+    0x00, 0x00, 0x48, 0x81, 0xEC, 0x00, 0x00, 0x00, 0x00, 0x33, 0xFF,
+    0x44, 0x0F, 0x29, 0xA4, 0x24, 0x00, 0x00, 0x00, 0x00, 0x89, 0x7C,
+    0x24, 0x00, 0x44, 0x0F, 0x28, 0xE1, 0x48, 0x8B, 0x01, 0x48, 0x8B,
+    0xF1, 0x41, 0x0F, 0xB6, 0xD8
+};
+
 } // namespace
 
 bool InstallFirePathHook(const TextSection& text, uintptr_t moduleBase) {
     const char* variant = "none";
-    const uintptr_t launchFn = FindUniquePatternEither(
+    uintptr_t launchFn = FindUniquePatternEither(
         text, kLaunchPattern, "xxxxxxxx????xxx????xxxxxxxxxxxx", "1.11",
         kLaunchPattern110163, "xxxxxxxxxxxxxxx?xxx????xxxxxxxxxx", "1.10.163",
         "fire path", variant);
+    if (!launchFn) {
+        launchFn = FindUniquePattern(text, kLaunchPatternXbox,
+                                     "xxxxxxxxxx?xxx????xxxxxxxxxxxx", "fire path Xbox");
+        if (launchFn) variant = "Xbox 1.11.240";
+    }
     if (!launchFn) {
         Log::Line("ERROR: fire path not found - aim decoupling is unavailable on this build,"
                   " so head tracking is staying off rather than aiming the reticle away from"
@@ -334,15 +352,18 @@ bool InstallFirePathHook(const TextSection& text, uintptr_t moduleBase) {
 }
 
 bool InstallAutoAimHook(const TextSection& text, uintptr_t moduleBase) {
-    const uintptr_t autoAimFn = FindUniquePattern(
-        text, kAutoAimPattern, "xxxxxxxxxx????xxx????xxx", "auto-aim solver");
+    const char* variant = "none";
+    const uintptr_t autoAimFn = FindUniquePatternEither(
+        text, kAutoAimPattern, "xxxxxxxxxx????xxx????xxx", "Steam/GOG",
+        kAutoAimPatternXbox, "xxxxxxxxx????xxx????xxxxxxx????xxx?xxxxxxxxxxxxxx", "Xbox 1.11.240",
+        "auto-aim solver", variant);
     if (!autoAimFn) {
         Log::Line("ERROR: auto-aim solver not found - aim decoupling is incomplete");
         return false;
     }
 
-    Log::Line("auto-aim solver found at RVA 0x%llX",
-              static_cast<unsigned long long>(autoAimFn - moduleBase));
+    Log::Line("auto-aim solver found at RVA 0x%llX (%s)",
+              static_cast<unsigned long long>(autoAimFn - moduleBase), variant);
     if (g_autoAimHook.Install(reinterpret_cast<void*>(autoAimFn),
                               reinterpret_cast<void*>(&AutoAimSolverHook),
                               reinterpret_cast<void**>(&g_originalAutoAim), "auto-aim solver")) {
