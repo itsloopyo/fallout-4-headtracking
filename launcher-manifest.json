@@ -6,19 +6,12 @@
     "game_id": "fallout-4"
   },
   "strategy": "AsiLoader",
-  "delivery_mode": "install_cmd",
-  "install_script": "install.cmd",
-  "uninstall_script": "uninstall.cmd",
+  "delivery_mode": "manifest",
 
   "files": [
+    { "source": "vendor/ultimate-asi-loader/dinput8.dll", "target": "dxgi.dll", "backup": true },
     { "source": "plugins/Fallout4HeadTracking.asi", "target": "Fallout4HeadTracking.asi" }
   ],
-
-  "loader": {
-    "archives": [],
-    "detect": ["dxgi.dll"],
-    "seed": []
-  },
 
   "runtime_requirements": [],
   "dependencies": []
