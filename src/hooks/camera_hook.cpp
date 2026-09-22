@@ -18,8 +18,10 @@
 #include "diagnostics/pose_trace.h"
 #include "diagnostics/render_audit.h"
 #include "game/fallout4_types.h"
+#include "game/fov_settings.h"
 #include "game/game_state.h"
 
+#include <cameraunlock/camera/zoom_compensation.h>
 #include <cameraunlock/memory/pattern_scanner.h>
 #include <cameraunlock/memory/rtti_vtable.h>
 
@@ -166,6 +168,30 @@ void __fastcall PlayerCameraUpdateHook(void* thisCamera) {
         haveRotation = mod.GetProcessedRotation(yaw, pitch, roll);
         hasPosition = mod.GetPositionOffset(posX, posY, posZ);
         worldSpaceYaw = mod.IsWorldSpaceYaw();
+
+        // A narrow field of view magnifies everything in the frame, head
+        // tracking included, so a scope or iron sights would otherwise sweep the
+        // view further for the same head angle and read as the mod's
+        // sensitivity jumping the moment the player aims. Scaling here, before
+        // the rotation is composed, is what makes everything downstream agree:
+        // the render injection, the crosshair projection built from the basis
+        // that was written, and the diagnostics all describe one camera.
+        //
+        // Yaw, pitch and the lean translate the image, so all three take it.
+        // Roll rotates the image about the view axis by the same angle at every
+        // field of view, so it does not.
+        //
+        // The frustum this uses was read at the end of the previous tick, since
+        // the engine has not computed this one yet. A zoom is therefore followed
+        // one frame late, which is invisible next to the zoom animation itself.
+        const float zoom = FovSettings::CurrentZoomFactor();
+        if (zoom != 1.0f) {
+            yaw = cameraunlock::camera::ScaleAngleForZoom(yaw, zoom);
+            pitch = cameraunlock::camera::ScaleAngleForZoom(pitch, zoom);
+            posX *= zoom;
+            posY *= zoom;
+            posZ *= zoom;
+        }
     }
     const HeadRotation head = haveRotation
         ? ComputeHeadRotation(yaw, pitch, roll, worldSpaceYaw)
@@ -261,6 +287,11 @@ void __fastcall PlayerCameraUpdateHook(void* thisCamera) {
         PublishCameraRootSnapshots(CameraRootSnapshots{});
     }
     CameraMutationMutex().unlock();
+
+    // Off the camera rather than off the pose, so the basis is visible without a
+    // tracker connected and without loading a save. Self-limiting: once, then
+    // only when the rendered FOV moves.
+    FovSettings::NoteRenderedFrustum(snapshot.frustumRight, snapshot.frustumTop);
 }
 
 // Resolve PlayerCamera's vtable by RTTI and hook the Update slot it inherits
@@ -308,6 +339,11 @@ bool InstallCameraHook() {
     if (!GameState::Initialize()) {
         Log::Line("WARN: Game state detection init failed");
     }
+
+    // Scans .data for the engine's own FOV settings, so it runs here on the
+    // init thread rather than on a camera tick. Failing leaves the compensation
+    // off and says so; it never guesses a reference.
+    FovSettings::Initialize();
 
     HMODULE gameModule = GetModuleHandleA(GAME_EXE);
     if (!gameModule) {

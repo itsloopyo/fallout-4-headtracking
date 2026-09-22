@@ -54,6 +54,7 @@ set(MOD_SOURCES
     src/hooks/module_scan.cpp
     src/hooks/player_hook.cpp
     src/hooks/view_matrix_hook.cpp
+    src/game/fov_settings.cpp
     src/game/game_state.cpp
     src/ui/game_window.cpp
     src/ui/notification.cpp
@@ -136,6 +137,10 @@ if(FALLOUT4_BUILD_TESTS)
     fallout4_add_test(fallout4_config_tests
         tests/config_tests.cpp
         src/core/config.cpp
+    )
+
+    fallout4_add_test(fallout4_fov_tests
+        tests/fov_tests.cpp
     )
 
     fallout4_add_test(fallout4_camera_math_tests

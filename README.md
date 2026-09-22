@@ -222,6 +222,27 @@ yawing while looking at the floor still pans left and right. Set it to `false`
 for camera-local yaw, which rotates around the camera's current up-axis.
 Toggle it live with `Page Down`.
 
+### Field of view
+
+The mod adds no field-of-view setting, because Fallout 4 already has two and a
+third would only disagree with them.
+
+- **In game**, open the console and type `fov 80 70`. The first number is first
+  person, the second is everything else. It takes effect immediately and lasts
+  for that session. Which key opens the console depends on your keyboard
+  layout; `` ` `` and `'` are the usual ones.
+- **Permanently**, set `fDefault1stPersonFOV` and `fDefaultWorldFOV` under
+  `[Display]` in `Documents\My Games\Fallout4\Fallout4.ini`. Those are the
+  values the game ships at 80 and 70.
+
+Head tracking follows whichever you use, without a restart, and it keeps the
+amount your head moves the view the same at any field of view. When the game
+narrows the view by itself, down a scope or through iron sights, the same head
+turn would otherwise sweep the picture much further and feel like the
+sensitivity had jumped; the mod scales the pose so it does not. Roll is left
+alone, because a head tilt rotates the picture by the same angle whatever the
+field of view.
+
 ## Troubleshooting
 
 - **Mod not loading.** Confirm `dxgi.dll` and `Fallout4HeadTracking.asi` are

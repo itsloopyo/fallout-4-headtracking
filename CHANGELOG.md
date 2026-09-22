@@ -6,6 +6,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+- Head tracking moves the view by the same amount on screen whatever the game
+  is doing with its field of view. Down a scope or through iron sights the view
+  is drawn much narrower, which magnified head tracking along with everything
+  else, so the same head turn swept the picture further and felt like the
+  sensitivity had jumped the moment you aimed. The mod now reads the field of
+  view the game is rendering and scales the pose to match. Roll is unchanged, a
+  head tilt already rotates the picture by the same angle at any field of view.
+- Changing the field of view with the console's `fov` command, or in
+  `Fallout4.ini`, is picked up without restarting the game.
+
 ### Added
 - The log now ends with a line saying the session ended normally. Without it a
   log from a player who simply quit and a log from a game that crashed both

@@ -21,6 +21,10 @@ struct TextSection {
 // Locate the module's .text section. Returns false if the image has none.
 bool FindTextSection(uintptr_t moduleBase, TextSection& out);
 
+// Locate any section by name, exact match on the full 8 bytes so ".data" does
+// not also answer for ".data1".
+bool FindSection(uintptr_t moduleBase, const char* name, uintptr_t& start, size_t& size);
+
 // Locate a prologue in .text, refusing to return anything if more than one site
 // matches. The functions hooked by this mod carry no RTTI, so a pattern is the
 // only anchor available, and one that has silently become ambiguous must fail
