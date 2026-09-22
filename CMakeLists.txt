@@ -36,6 +36,7 @@ set(MOD_SOURCES
     src/core/hotkeys.cpp
     src/core/path_utils.cpp
     src/core/seh_guard.cpp
+    src/core/session_end.cpp
     src/diagnostics/ab_switches.cpp
     src/diagnostics/frame_verdict.cpp
     src/diagnostics/matrix_dump.cpp

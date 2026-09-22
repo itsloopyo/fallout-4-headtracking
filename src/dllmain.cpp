@@ -133,6 +133,12 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID lpReserved) {
                 CloseHandle(g_initThreadHandle);
                 g_initThreadHandle = nullptr;
             }
+            // Do not put a "session ended" line here. Fallout 4 never reaches
+            // this case: a detach handler writing through its own fresh file
+            // handle, so that a closed log could not explain a missing line,
+            // produced no file at all after a clean quit. The engine
+            // terminates rather than unwinds. The marker hooks
+            // ntdll!NtTerminateProcess instead - see core/session_end.cpp.
             Fallout4HT::Log::Close();
             break;
     }

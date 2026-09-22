@@ -4,6 +4,7 @@
 #include "mod.h"
 #include "logging.h"
 #include "path_utils.h"
+#include "session_end.h"
 #include "hooks/camera_hook.h"
 #include "ui/notification.h"
 
@@ -229,6 +230,11 @@ bool Mod::InitializeHooks() {
         Log::Line("ERROR: MinHook initialization failed: %s", HookStatusToString(status));
         return false;
     }
+
+    // Before the camera hook, and not gated on it: a session whose camera hook
+    // failed still has to be able to say whether it ended or died, because
+    // that is precisely the log someone will be reading.
+    InstallSessionEndMarker();
 
     m_cameraHookInstalled = InstallCameraHook();
     if (m_cameraHookInstalled) {

@@ -7,6 +7,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- The log now ends with a line saying the session ended normally. Without it a
+  log from a player who simply quit and a log from a game that crashed both
+  just stopped, so every crash report had to begin by working out whether there
+  had been a crash at all. The line is missing from any session that crashed or
+  was killed, which is what makes it useful.
 - The previous session's log is kept as `HeadTracking.prev.log`. The log is
   rewritten on every launch, so a crash report sent after a relaunch used to
   arrive with the crashed session already gone. A rename that fails is reported
