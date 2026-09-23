@@ -14,11 +14,18 @@ An unofficial head tracking mod for Fallout 4 that moves the view with your head
 
 ## Requirements
 
-- [Fallout 4](https://store.steampowered.com/app/377160/Fallout_4/) (Steam, GOG, or Game Pass install).
+- [Fallout 4](https://store.steampowered.com/app/377160/Fallout_4/) (Steam, GOG, or Xbox Game Pass install).
 - A tracking source: [OpenTrack](https://github.com/opentrack/opentrack) with a webcam or VR headset, or a phone app that speaks the OpenTrack UDP protocol.
 - Windows 10 or 11, 64-bit.
 
 ## Installation
+
+### Lopari
+
+Download [Lopari](https://lopari.app), choose **Fallout 4**, and click
+**Play with head tracking**.
+
+### Standalone Installer
 
 1. Download `Fallout4HeadTracking-v<version>-installer.zip` from the
    [Releases](https://github.com/itsloopyo/fallout-4-headtracking/releases)
@@ -39,9 +46,9 @@ yourself. Either pass the path as an argument:
 install.cmd "D:\Games\Steam\steamapps\common\Fallout 4"
 ```
 
-The installer detects Steam, GOG and Game Pass copies, and stops at the first
+The installer detects Steam, GOG and Xbox Game Pass copies, and stops at the first
 it finds in that order. If you own the game on more than one of them, point it
-at the one you actually play. A Game Pass copy lives in `XboxGames` on whichever
+at the one you actually play. An Xbox Game Pass copy lives in `XboxGames` on whichever
 drive you told the Xbox app to install to, and the folder to pass is the
 `Content` one inside it:
 
