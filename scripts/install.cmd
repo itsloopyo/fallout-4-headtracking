@@ -25,6 +25,10 @@ set "ASI_LOADER_NAME=dxgi.dll"
 :: the unconditional copy and resets every key on every update.
 set "MOD_SEED_FILES="
 set "MOD_CONTROLS=Controls (nav-cluster or Ctrl+Shift+letter chord):&echo   End  / Ctrl+Shift+Y - Toggle tracking&echo   PgUp / Ctrl+Shift+G - Cycle tracking mode&echo   PgDn / Ctrl+Shift+H - Toggle world/local yaw&echo          Ctrl+Shift+U - Next tracker source"
+:: Not used by this mod. Set blank so a value another mod's wrapper left in
+:: the same console does not reach the body.
+set "ASI_SUBDIR="
+set "ASI_LOADER_VERSION="
 :: --- END CONFIG BLOCK ---
 
 :: Pin delayed expansion off before `%*` is expanded on the `call` below.
