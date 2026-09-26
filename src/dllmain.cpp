@@ -6,6 +6,8 @@
 #include "core/path_utils.h"
 #include "ui/game_window.h"
 #include "game/game_state.h"
+#include "hooks/player_hook.h"
+#include "diagnostics/frame_verdict.h"
 
 #include <cameraunlock/diagnostics/crash_handler.h>
 
@@ -114,8 +116,6 @@ unsigned __stdcall InitThread(void* lpParam) {
 } // namespace
 
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID lpReserved) {
-    (void)lpReserved;
-
     switch (reason) {
         case DLL_PROCESS_ATTACH:
             DisableThreadLibraryCalls(hModule);
@@ -124,19 +124,28 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID lpReserved) {
             break;
 
         case DLL_PROCESS_DETACH:
-            // We're holding the loader lock here. Joining threads or running
-            // MinHook teardown under the lock can deadlock if any of them
-            // touches LoadLibrary/GetModuleHandle, and is pointless on process
-            // teardown because the OS will reclaim everything. Only close the
-            // init-thread handle (non-blocking) and flush the log.
+            // We're holding the loader lock here. Joining a live thread or
+            // running MinHook teardown under the lock can deadlock if any of
+            // them touches LoadLibrary/GetModuleHandle, and is pointless on
+            // process teardown because the OS will reclaim everything.
             if (g_initThreadHandle) {
                 CloseHandle(g_initThreadHandle);
                 g_initThreadHandle = nullptr;
             }
-            // Do not put a "session ended" line here. Fallout 4 never reaches
+            // When the game leaves through ExitProcess, the CRT destroys our
+            // globals after this returns, and a std::thread destroyed while
+            // still joinable calls std::terminate - a fast-fail crash on quit.
+            // lpReserved is non-null only on process termination, where every
+            // other thread has already been ended, so these joins return at
+            // once and cannot deadlock on the loader lock.
+            if (lpReserved != nullptr) {
+                Fallout4HT::StopFrameVerdictReporter();
+                Fallout4HT::StopPauseWatchdog();
+            }
+            // Do not put a "session ended" line here. Most quits never reach
             // this case: a detach handler writing through its own fresh file
             // handle, so that a closed log could not explain a missing line,
-            // produced no file at all after a clean quit. The engine
+            // produced no file at all after a clean quit. The engine usually
             // terminates rather than unwinds. The marker hooks
             // ntdll!NtTerminateProcess instead - see core/session_end.cpp.
             Fallout4HT::Log::Close();
