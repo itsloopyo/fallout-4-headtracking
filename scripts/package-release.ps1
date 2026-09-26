@@ -46,9 +46,6 @@ if (-not (Test-Path $asiPath)) {
     throw "$modName.asi not found at: $asiPath. Run 'pixi run build-release' first."
 }
 
-$iniPath = Join-Path $projectDir "HeadTracking.ini"
-if (-not (Test-Path $iniPath)) { throw "HeadTracking.ini not found at: $iniPath" }
-
 $scriptsDir = Join-Path $projectDir "scripts"
 foreach ($script in @("install.cmd", "uninstall.cmd")) {
     $p = Join-Path $scriptsDir $script
@@ -78,8 +75,8 @@ foreach ($script in @("install.cmd", "uninstall.cmd")) {
 }
 
 # Launcher manifest: the file lopari reads at the installer ZIP root to learn
-# the mod's identity, strategy, and delivery mode. delivery_mode "install_cmd"
-# means the launcher drives install.cmd / uninstall.cmd for deployment.
+# the mod's identity, strategy, delivery mode and where its config file is. No
+# config is shipped: the mod creates CameraUnlock.ini at first launch.
 $launcherManifestPath = Join-Path $projectDir "launcher-manifest.json"
 if (-not (Test-Path $launcherManifestPath)) { throw "launcher-manifest.json not found at: $launcherManifestPath" }
 Copy-Item $launcherManifestPath -Destination $stagingInstaller -Force
@@ -89,8 +86,6 @@ $pluginsDir = Join-Path $stagingInstaller "plugins"
 New-Item -ItemType Directory -Path $pluginsDir -Force | Out-Null
 Copy-Item $asiPath -Destination $pluginsDir -Force
 Write-Host "  plugins/$modName.asi" -ForegroundColor Green
-Copy-Item $iniPath -Destination $pluginsDir -Force
-Write-Host "  plugins/HeadTracking.ini" -ForegroundColor Green
 
 $vendorDest = Join-Path $stagingInstaller "vendor/ultimate-asi-loader"
 New-Item -ItemType Directory -Path $vendorDest -Force | Out-Null

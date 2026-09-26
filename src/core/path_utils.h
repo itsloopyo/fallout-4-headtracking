@@ -14,4 +14,8 @@ std::string GetModulePath(const char* filename);
 // via CP_ACP so non-ASCII install paths stay intact.
 std::wstring GetModulePathW(const char* filename);
 
+// The folder our DLL is in, ending in a separator, read wide from the loader so
+// a character the ANSI code page cannot hold survives. Empty on failure.
+std::wstring GetModuleDirectoryW();
+
 } // namespace Fallout4HT

@@ -6,7 +6,11 @@
 # CMakeLists is enough, there is no list to keep in step here.
 
 [CmdletBinding()]
-param([string]$Config = 'Debug')
+param(
+    [string]$Config = 'Debug',
+    # Build the mod's test binaries and stop, for pixi run render-config.
+    [switch]$BuildOnly
+)
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -21,6 +25,7 @@ if ($LASTEXITCODE -ne 0) { throw "CMake configure failed ($LASTEXITCODE)" }
 # matching name prefix is what ctest selects on.
 cmake --build $BuildDir --config $Config --target fallout4_tests
 if ($LASTEXITCODE -ne 0) { throw "Test build failed ($LASTEXITCODE)" }
+if ($BuildOnly) { return }
 
 # cameraunlock-core's own tests run here too. They cover behaviour this mod
 # relies on and cannot test from its own sources - notably the UDP supervisor

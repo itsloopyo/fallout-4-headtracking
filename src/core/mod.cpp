@@ -8,9 +8,11 @@
 #include "hooks/camera_hook.h"
 #include "ui/notification.h"
 
+#include <cameraunlock/config/defaults_file.h>
 #include <cameraunlock/hooks/hook_manager.h>
 #include <cameraunlock/math/smoothing_utils.h>
 #include <cameraunlock/memory/pe_fingerprint.h>
+#include <cameraunlock/tracking/tracking_mode.h>
 
 namespace Fallout4HT {
 
@@ -121,17 +123,17 @@ bool Mod::Initialize() {
     m_udpReceiver.SetLog([](const std::string& msg) {
         Log::Line("%s", msg.c_str());
     });
-    if (m_udpReceiver.Start(m_config.udpPort)) {
-        Log::Line("UDP receiver started on port %d", m_config.udpPort);
+    if (m_udpReceiver.Start(static_cast<uint16_t>(m_config.udp_port))) {
+        Log::Line("UDP receiver started on port %d", m_config.udp_port);
     } else {
         Log::Line("WARN: UDP port %d is held by another process - receiver will retry in the background",
-                  m_config.udpPort);
+                  m_config.udp_port);
     }
 
-    m_enabled.store(m_config.autoEnable);
-    Log::Line("%s", m_config.autoEnable
-                        ? "Head tracking auto-enabled at startup"
-                        : "Head tracking disabled at startup (auto-enable is off)");
+    m_enabled.store(m_config.enable_on_startup);
+    Log::Line("%s", m_config.enable_on_startup
+                        ? "Head tracking enabled at startup"
+                        : "Head tracking disabled at startup (EnableOnStartup is off)");
 
     m_initialized.store(true);
 
@@ -160,64 +162,65 @@ void Mod::Shutdown() {
 }
 
 bool Mod::LoadConfig() {
-    std::string configPath = GetModulePath("HeadTracking.ini");
-    if (configPath.empty()) {
+    namespace cfg = cameraunlock::config;
+    const std::wstring folder = GetModuleDirectoryW();
+    if (folder.empty()) {
         // Module directory lookup failed - refuse to fall back to a CWD-relative
         // config, since that would silently read/write the wrong file.
-        Log::Line("ERROR: Could not resolve module directory for HeadTracking.ini - using built-in defaults");
-        m_config.SetDefaults();
+        Log::Line("ERROR: Could not resolve module directory for CameraUnlock.ini - using built-in "
+                  "defaults, and nothing is saved this session");
+        m_config = MakeConfigTable().defaults();
         return false;
     }
 
-    if (!m_config.Load(configPath.c_str())) {
-        m_config.SetDefaults();
-        m_config.Save(configPath.c_str());
-        return false;
-    }
+    cfg::ConfigOwnerOptions<Config> options = MakeConfigOwnerOptions(folder, cfg::DefaultsFile::PerUser());
+    // The mod has no overlay, so a message for the player goes where every other
+    // notice of this mod goes.
+    options.status_sink = [](const std::string& message) { ShowNotification(message.c_str()); };
+    m_configOwner.emplace(std::move(options));
 
-    return true;
+    const cfg::ConfigLoadResult<Config> loaded = m_configOwner->Load();
+    for (const std::string& line : loaded.log) Log::Line("%s", line.c_str());
+    Log::Line("Config: %s", cfg::ConfigLoadStatusName(loaded.status));
+    // Every status hands back the settings to run on.
+    m_config = loaded.config;
+    return loaded.status == cfg::ConfigLoadStatus::Canonical || loaded.status == cfg::ConfigLoadStatus::Migrated ||
+           loaded.status == cfg::ConfigLoadStatus::Created;
+}
+
+void Mod::SaveConfig(const std::function<void(Config&)>& change) {
+    namespace cfg = cameraunlock::config;
+    if (!m_configOwner) {
+        Log::Line("WARN: not saved: CameraUnlock.ini has no known folder this session");
+        return;
+    }
+    const cfg::ConfigSaveResult saved = m_configOwner->Save(change);
+    for (const std::string& line : saved.log) Log::Line("%s", line.c_str());
+    if (saved.status != cfg::ConfigSaveStatus::Saved) {
+        Log::Line("WARN: config save %s: %s", cfg::ConfigSaveStatusName(saved.status), saved.reason.c_str());
+    }
 }
 
 void Mod::ConfigureSession() {
-    cameraunlock::SensitivitySettings sensitivity;
-    sensitivity.yaw = m_config.yawMultiplier;
-    sensitivity.pitch = m_config.pitchMultiplier;
-    sensitivity.roll = m_config.rollMultiplier;
+    Log::Line("Smoothing: local=%.2f remote=%.2f", m_config.local_smoothing, m_config.remote_smoothing);
 
-    cameraunlock::TrackingProcessor& processor = m_session.GetProcessor();
-    processor.SetSensitivity(sensitivity);
-
-    Log::Line("TrackingProcessor initialized with sensitivity: yaw=%.2f pitch=%.2f roll=%.2f "
-              "smoothing: local=%.2f remote=%.2f",
-              sensitivity.yaw, sensitivity.pitch, sensitivity.roll,
-              m_config.localSmoothing, m_config.remoteSmoothing);
-
-    m_worldSpaceYaw.store(m_config.worldSpaceYaw);
+    m_worldSpaceYaw.store(m_config.world_space_yaw);
     Log::Line("Yaw mode: %s", m_worldSpaceYaw.load() ? "horizon-locked (world)" : "camera-local");
 
-    // DOF mode seeds from the legacy positionEnabled config: true -> Full
-    // 6DOF, false -> rotation only. Position-only is reachable from either
-    // start via the cycle hotkey.
-    if (!m_config.positionEnabled) {
-        m_session.SetMode(cameraunlock::TrackingMode::RotationOnly);
-    }
-    // Built by Config::BuildPositionSettings() rather than field-by-field here:
-    // the argument list is long enough that a silent rebinding onto a
-    // neighbouring parameter would compile clean and only show up as wrong
-    // position limits, and the single-source-of-truth builder is what a unit
-    // test can exercise without a live session.
-    const cameraunlock::PositionSettings posSettings = m_config.BuildPositionSettings();
-    m_session.GetPositionProcessor().SetSettings(posSettings);
+    // The table reads a pair that names no mode as its defaults, so every
+    // loaded pair decodes.
+    m_session.SetMode(cameraunlock::DecodeTrackingMode(m_config.rotation_enabled, m_config.position_enabled).value());
+    m_session.GetPositionProcessor().SetSettings(m_config.position);
 
     // After SetSettings, never before: the session hands both values to the
     // rotation and the position processor, and the connection flag that picks
     // between them is fed from the receiver inside Update().
-    m_session.SetLocalSmoothing(m_config.localSmoothing);
-    m_session.SetRemoteSmoothing(m_config.remoteSmoothing);
-    Log::Line("Position processor initialized (%s, sens=%.1f/%.1f/%.1f, limits=%.2f/%.2f/%.2f)",
-              DofModeName(m_session.GetMode()),
-              posSettings.sensitivity_x, posSettings.sensitivity_y, posSettings.sensitivity_z,
-              posSettings.limit_x, posSettings.limit_y, posSettings.limit_z);
+    m_session.SetLocalSmoothing(m_config.local_smoothing);
+    m_session.SetRemoteSmoothing(m_config.remote_smoothing);
+    const cameraunlock::PositionSettings& limits = m_config.position;
+    Log::Line("Position processor initialized (%s, limits x=%.2f up=%.2f down=%.2f forward=%.2f back=%.2f)",
+              DofModeName(m_session.GetMode()), limits.limit_x, limits.limit_y, limits.limit_y_down,
+              limits.limit_z, limits.limit_z_back);
 }
 
 bool Mod::InitializeHooks() {
@@ -267,7 +270,7 @@ void Mod::ShutdownHooks() {
 }
 
 void Mod::Notify(const char* message) const {
-    if (m_config.showNotifications) {
+    if (m_config.show_notifications) {
         ShowNotification(message);
     }
 }
@@ -287,7 +290,7 @@ void Mod::LogConnectionLocality() {
     Log::Line("Tracker source is %s - smoothing=%.2f",
               isRemote ? "a remote device" : "on this machine",
               cameraunlock::math::GetEffectiveSmoothing(
-                  m_config.localSmoothing, m_config.remoteSmoothing, isRemote));
+                  m_config.local_smoothing, m_config.remote_smoothing, isRemote));
 }
 
 void Mod::SetEnabled(bool enabled) {
@@ -303,12 +306,19 @@ void Mod::Toggle() {
 }
 
 void Mod::CycleDofMode() {
-    const char* name = DofModeName(m_session.CycleMode());
+    const cameraunlock::TrackingMode mode = m_session.CycleMode();
+    const char* name = DofModeName(mode);
     Log::Line("DOF mode: %s", name);
 
     std::string msg = "Mode: ";
     msg += name;
     Notify(msg.c_str());
+
+    const cameraunlock::TrackingModeChannels channels = cameraunlock::EncodeTrackingMode(mode);
+    SaveConfig([channels](Config& c) {
+        c.rotation_enabled = channels.rotation_enabled;
+        c.position_enabled = channels.position_enabled;
+    });
 }
 
 void Mod::CycleAxisIsolation() {
@@ -351,6 +361,8 @@ void Mod::ToggleYawMode() {
 
     Log::Line("Yaw mode: %s", newValue ? "horizon-locked (world)" : "camera-local");
     Notify(newValue ? "Yaw Mode: Horizon-locked" : "Yaw Mode: Camera-local");
+
+    SaveConfig([newValue](Config& c) { c.world_space_yaw = newValue; });
 }
 
 void Mod::CycleTrackerSource() {
@@ -382,13 +394,16 @@ bool Mod::GetProcessedRotation(float& yaw, float& pitch, float& roll) {
         if (!m_warnedSecondSource || nowMs - m_lastSecondSourceWarnMs >= kSecondSourceWarnIntervalMs) {
             m_warnedSecondSource = true;
             m_lastSecondSourceWarnMs = nowMs;
+            const std::string& sourceKeys = m_config.cycle_tracker_source_key_name;
             Log::Line("WARNING: more than one app is sending head tracking to port %d"
                       " (%llu packets ignored). Two sources make the view jump between two"
                       " poses, and the ignored one reaches the game with nothing at all."
                       " Close every tracker app but one - OpenTrack"
-                      " and a vendor tool like Tobii Game Hub both send here - or press"
-                      " Ctrl+Shift+U to drive from the other one.",
-                      m_config.udpPort, static_cast<unsigned long long>(rejected));
+                      " and a vendor tool like Tobii Game Hub both send here - or %s%s%s.",
+                      m_config.udp_port, static_cast<unsigned long long>(rejected),
+                      sourceKeys.empty() ? "bind [Hotkeys] CycleTrackerSourceKey in CameraUnlock.ini" : "press ",
+                      sourceKeys.c_str(),
+                      sourceKeys.empty() ? "" : " to drive from the other one");
             Notify("Two tracker apps sending - close one");
         }
     }

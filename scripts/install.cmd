@@ -7,10 +7,10 @@
 :: --- CONFIG BLOCK ---
 set "GAME_ID=fallout-4"
 set "MOD_DISPLAY_NAME=Fallout 4 Head Tracking"
-:: HeadTracking.ini is deliberately NOT deployed here. The install body copies
-:: every MOD_DLLS entry with "copy /y", so listing the config would overwrite the
-:: player's tuned settings on every update. The mod writes the file with defaults
-:: on first launch when it is absent, so nothing is lost by leaving it out.
+:: No config is deployed. The mod creates CameraUnlock.ini at first launch,
+:: importing HeadTracking.ini from an earlier version once, so a copy placed here
+:: would stop that import on an update, and MOD_DLLS's "copy /y" would overwrite
+:: the player's settings on every install.
 set "MOD_DLLS=Fallout4HeadTracking.asi"
 set "MOD_INTERNAL_NAME=Fallout4HeadTracking"
 set "MOD_VERSION=0.0.0"

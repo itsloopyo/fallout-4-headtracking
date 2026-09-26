@@ -14,7 +14,12 @@
 #include "hooks/camera_snapshot.h"
 #include "diagnostics/render_audit.h"
 
-#include <cameraunlock/input/chord_hotkeys.h>
+#include <cameraunlock/input/key_binding_registration.h>
+#include <cameraunlock/input/key_bindings.h>
+
+#include <functional>
+#include <stdexcept>
+#include <string>
 
 // The diagnostic chords and Insert below are reverse-engineering instruments,
 // not controls a player needs. Configure with -DFALLOUT4_DEV_HOTKEYS=ON to
@@ -23,32 +28,47 @@
 #define FALLOUT4_DEV_HOTKEYS 0
 #endif
 
+#if FALLOUT4_DEV_HOTKEYS
+#include <cameraunlock/input/chord_hotkeys.h>
+#endif
+
 namespace Fallout4HT {
+
+namespace {
+
+// A key list from CameraUnlock.ini onto the poller. The table only holds lists its
+// hotkey codec read, so one that does not parse here is a bug, not a player's typo.
+void Register(cameraunlock::input::HotkeyPoller& poller, const std::string& list, const char* key,
+              std::function<void()> action) {
+    const cameraunlock::input::KeyBindingsParseResult parsed = cameraunlock::input::ParseKeyBindings(list);
+    if (!parsed.ok()) {
+        throw std::logic_error(std::string("[Hotkeys] ") + key + "=" + list + " does not parse: " + parsed.error);
+    }
+    cameraunlock::input::RegisterKeyBindings(poller, parsed.bindings, std::move(action));
+}
+
+}  // namespace
 
 bool Hotkeys::Start(const Config& cfg) {
     if (m_started) return true;
 
-    using cameraunlock::input::ChordGuarded;
-    using cameraunlock::input::NavGuarded;
-
-    // Primary nav-cluster bindings. NavGuarded so they stay silent while the
-    // Ctrl+Shift chord is held - the chord path is then the sole trigger and a
-    // single keypress can't fire two actions.
-    m_poller.AddHotkey(cfg.toggleKey, NavGuarded([] { Mod::Instance().Toggle(); }));
-    m_poller.AddHotkey(cfg.positionToggleKey, NavGuarded([] { Mod::Instance().CycleDofMode(); }));
-    m_poller.AddHotkey(cfg.yawModeKey, NavGuarded([] { Mod::Instance().ToggleYawMode(); }));
-
-    // Chord aliases: Ctrl+Shift+Y/G/H
-    m_poller.AddHotkey('Y', ChordGuarded([] { Mod::Instance().Toggle(); }));
-    m_poller.AddHotkey('G', ChordGuarded([] { Mod::Instance().CycleDofMode(); }));
-    m_poller.AddHotkey('H', ChordGuarded([] { Mod::Instance().ToggleYawMode(); }));
-    // 5th user-facing slot in the cluster. Needed because which tracker app wins
-    // the source lock is a race decided in milliseconds at startup, so a player
-    // running more than one (OpenTrack plus a vendor tool) can end up on the
-    // wrong one with no way to say so from inside the game.
-    m_poller.AddHotkey('U', ChordGuarded([] { Mod::Instance().CycleTrackerSource(); }));
+    // Each list holds every key that fires its action, the Ctrl+Shift chord
+    // included, and a key without modifiers stays silent while Ctrl and Shift
+    // are both held, so one press never fires two actions.
+    Register(m_poller, cfg.toggle_key_name, "ToggleKey", [] { Mod::Instance().Toggle(); });
+    Register(m_poller, cfg.cycle_tracking_mode_key_name, "CycleTrackingModeKey",
+             [] { Mod::Instance().CycleDofMode(); });
+    Register(m_poller, cfg.yaw_mode_key_name, "YawModeKey", [] { Mod::Instance().ToggleYawMode(); });
+    // Needed because which tracker app wins the source lock is a race decided in
+    // milliseconds at startup, so a player running more than one (OpenTrack plus
+    // a vendor tool) can end up on the wrong one with no way to say so from
+    // inside the game.
+    Register(m_poller, cfg.cycle_tracker_source_key_name, "CycleTrackerSourceKey",
+             [] { Mod::Instance().CycleTrackerSource(); });
 
 #if FALLOUT4_DEV_HOTKEYS
+    using cameraunlock::input::ChordGuarded;
+
     // Diagnostics are chords too, and for a harder reason than tidiness: F5 is
     // Fallout 4's quicksave and F9 its quickload. Diagnostics sat on both, so
     // arming an instrument saved the game and running an A/B reloaded it - which
@@ -99,9 +119,9 @@ bool Hotkeys::Start(const Config& cfg) {
         return false;
     }
 
-    Log::Line("Hotkeys ready: toggle=0x%02X position=0x%02X yawmode=0x%02X "
-              "+ Ctrl+Shift+Y/G/H/U chords",
-              cfg.toggleKey, cfg.positionToggleKey, cfg.yawModeKey);
+    Log::Line("Hotkeys ready: toggle=[%s] cycle tracking mode=[%s] yaw mode=[%s] next tracker source=[%s]",
+              cfg.toggle_key_name.c_str(), cfg.cycle_tracking_mode_key_name.c_str(),
+              cfg.yaw_mode_key_name.c_str(), cfg.cycle_tracker_source_key_name.c_str());
 #if FALLOUT4_DEV_HOTKEYS
     Log::Line("Diagnostics: Ctrl+Shift+D pose trace, J extrapolation, "
               "I axis isolation, K crosshair A/B, B verdict trace, V/X VATS probes, "

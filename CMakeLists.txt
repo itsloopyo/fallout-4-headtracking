@@ -135,11 +135,16 @@ if(FALLOUT4_BUILD_TESTS)
         add_dependencies(fallout4_tests ${name})
     endfunction()
 
+    # The committed HeadTracking.ini against the table, and the toggles' saves.
+    # `--render-config <path>` makes it write the committed file instead
+    # (pixi run render-config).
     fallout4_add_test(fallout4_config_tests
         tests/config_tests.cpp
         src/core/config.cpp
         src/legacy_config/legacy_config.cpp
     )
+    target_compile_definitions(fallout4_config_tests PRIVATE
+        F4_COMMITTED_CONFIG=L"${CMAKE_CURRENT_SOURCE_DIR}/HeadTracking.ini")
 
     # The config differential test. The oracle is the dev pre-release's reader (fbefff4), the
     # only published build, copied byte for byte into tests/config_differential/oracle; renaming
@@ -158,13 +163,22 @@ if(FALLOUT4_BUILD_TESTS)
 
     fallout4_add_test(fallout4_config_differential
         tests/config_differential/differential_tests.cpp
+        src/core/config.cpp
         src/legacy_config/legacy_config.cpp
     )
     target_include_directories(fallout4_config_differential PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/tests/config_differential)
     target_compile_definitions(fallout4_config_differential PRIVATE
-        F4_DIFFERENTIAL_INPUTS="${CMAKE_CURRENT_SOURCE_DIR}/tests/config_differential/inputs")
+        F4_DIFFERENTIAL_INPUTS="${CMAKE_CURRENT_SOURCE_DIR}/tests/config_differential/inputs"
+        F4_COMMITTED_CONFIG="${CMAKE_CURRENT_SOURCE_DIR}/HeadTracking.ini")
     target_link_libraries(fallout4_config_differential PRIVATE f4_config_oracle)
+
+    # Core's canonical config lint over the committed file and every file the differential
+    # test migrated, which it writes beside itself under migrated\.
+    add_test(NAME fallout4_config_lint COMMAND node
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/config_differential/lint-migrated.mjs
+        $<TARGET_FILE_DIR:fallout4_config_differential>/migrated)
+    set_tests_properties(fallout4_config_lint PROPERTIES DEPENDS fallout4_config_differential)
 
     # The frozen reader, the core sources it compiles, the oracle and the inputs against the
     # hashes tests/config_differential/frozen.tsv records.

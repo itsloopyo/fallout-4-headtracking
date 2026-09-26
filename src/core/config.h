@@ -2,76 +2,42 @@
 
 #pragma once
 
-#include <cstdint>
+#include <cameraunlock/config/config_owner.h>
+#include <cameraunlock/config/config_table.h>
+#include <cameraunlock/config/defaults_file.h>
+#include <cameraunlock/config/head_tracking_config.h>
+#include <cameraunlock/config/legacy_import.h>
 
-// The defaults below are the constants, so the dependency is declared here
-// rather than left to whatever the including translation unit happens to have
-// pulled in through the precompiled header.
-#include "constants.h"
-
-#include <cameraunlock/data/position_settings.h>
-#include <cameraunlock/math/smoothing_utils.h>
+#include <string>
 
 namespace Fallout4HT {
 
-struct Config {
-    // Network settings
-    uint16_t udpPort = DEFAULT_UDP_PORT;
+// Beside the .asi, which is beside Fallout4.exe.
+constexpr const wchar_t* kConfigFileName = L"CameraUnlock.ini";
+// The file every build before the canonical config format read, imported once while
+// CameraUnlock.ini is absent and never written.
+constexpr const wchar_t* kLegacyConfigFileName = L"HeadTracking.ini";
+// The game's name as cameraunlock-core's data/games.json spells it.
+constexpr const char* kConfigDisplayName = "Fallout 4";
 
-    // Sensitivity multipliers
-    float yawMultiplier = 1.0f;
-    float pitchMultiplier = 1.0f;
-    float rollMultiplier = 1.0f;
-
-    // Smoothing is picked per connection from the packet's source address, and
-    // both values cover rotation and position alike. A tracker running on this
-    // machine needs none of it - localSmoothing is 0.0 and nothing floors it -
-    // while a phone on WiFi jitters over the network, which is what
-    // remoteSmoothing is for. Higher trades crispness for noise rejection.
-    float localSmoothing = static_cast<float>(cameraunlock::math::kDefaultLocalSmoothing);
-    float remoteSmoothing = static_cast<float>(cameraunlock::math::kDefaultRemoteSmoothing);
-
-    // Hotkeys (Virtual Key codes)
-    int toggleKey = DEFAULT_TOGGLE_KEY;
-    int positionToggleKey = DEFAULT_POSITION_TOGGLE_KEY;
-    int yawModeKey = DEFAULT_YAW_MODE_KEY;
-
-    // Position settings (6DOF)
-    float positionSensitivityX = 1.0f;
-    float positionSensitivityY = 1.0f;
-    float positionSensitivityZ = 1.0f;
-    float positionLimitX = cameraunlock::PositionSettings{}.limit_x;
-    float positionLimitY = cameraunlock::PositionSettings{}.limit_y;
-    float positionLimitZ = cameraunlock::PositionSettings{}.limit_z;
-    float positionLimitZBack = cameraunlock::PositionSettings{}.limit_z_back;
-    // X stays inverted: a phone tracker looks at the player through its front
-    // camera, so its x runs the other way round, which is what this setting is
-    // for. Its limit is symmetric, so inverting costs nothing.
-    bool positionInvertX = true;
-    bool positionInvertY = false;
-    // Z must NOT be inverted here. The core-to-engine convention flip is a
-    // negation at the engine boundary (TrackerLeanToWorldUnits); doing it with
-    // this flag instead swaps the asymmetric forward/back limits over with it,
-    // so leaning in stops at 0.10 m while leaning back gets 0.40 m.
-    bool positionInvertZ = false;
-    bool positionEnabled = true;
-
-    // General settings
-    bool autoEnable = true;
-    bool showNotifications = true;
-    bool worldSpaceYaw = true;
-
-    // Load/Save
-    bool Load(const char* path);
-    bool Save(const char* path) const;
-    void SetDefaults();
-
-    // The single configured vertical limit (positionLimitY) mirrored into both
-    // PositionSettings::limit_y and limit_y_down, the way PositionSettings::Symmetric
-    // does. There is no separate downward-limit key here; leaving limit_y_down unset
-    // pins it at the struct default (0.20m) regardless of positionLimitY, so raising
-    // LimitY would widen upward travel only and leave downward travel unchanged.
-    cameraunlock::PositionSettings BuildPositionSettings() const;
+// Core's config, at core's defaults, plus the two settings only this mod has.
+struct Config : cameraunlock::HeadTrackingConfig {
+    bool show_notifications = true;
+    // The chord every earlier build registered for this, and nothing else.
+    std::string cycle_tracker_source_key_name = "Ctrl+Shift+U";
 };
 
-} // namespace Fallout4HT
+// The rows of CameraUnlock.ini. Only the tracking mode pair and WorldSpaceYaw are Writable:
+// the mode and yaw hotkeys save the player's choice, and End changes the session only.
+cameraunlock::config::ConfigTable<Config> MakeConfigTable();
+
+// HeadTracking.ini as the builds before the canonical format read it (legacy_config/), mapped
+// into Config.
+cameraunlock::config::LegacyImport<Config> MakeLegacyImport();
+
+// The owner's options for CameraUnlock.ini in `folder`, with HeadTracking.ini beside it as the
+// legacy file. `folder` ends in a separator.
+cameraunlock::config::ConfigOwnerOptions<Config> MakeConfigOwnerOptions(
+    const std::wstring& folder, cameraunlock::config::DefaultsFile defaults);
+
+}  // namespace Fallout4HT

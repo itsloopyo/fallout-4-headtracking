@@ -86,8 +86,14 @@ namespace {
 
 // The tracker's axes mapped onto cameraRoot's, still in metres. The single
 // definition both lean paths derive from.
+//
+// x is negated here because the tracker's x runs the other way from cameraRoot's
+// right axis. Every build before the canonical config did the same through
+// [Position] InvertX=true, which it shipped on; that ran ahead of the lean clamp,
+// and the x limit and the smoothing are symmetric in x, so negating here after
+// them gives the same lean bit for bit.
 NiPoint3 TrackerAxesToCameraFrame(float metersX, float metersY, float metersZ) {
-    return NiPoint3(metersX, -metersZ, metersY);
+    return NiPoint3(-metersX, -metersZ, metersY);
 }
 
 }  // namespace

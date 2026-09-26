@@ -7,7 +7,7 @@
 :: --- CONFIG BLOCK ---
 set "GAME_ID=fallout-4"
 set "MOD_DISPLAY_NAME=Fallout 4 Head Tracking"
-set "MOD_DLLS=Fallout4HeadTracking.asi HeadTracking.ini"
+set "MOD_DLLS=Fallout4HeadTracking.asi"
 set "MOD_INTERNAL_NAME=Fallout4HeadTracking"
 set "STATE_FILE=.headtracking-state.json"
 set "FRAMEWORK_TYPE=ASILoader"
@@ -21,7 +21,7 @@ set "MOD_SEED_FILES="
 :: reinstall: paths relative to the game folder, quoted when one holds a space.
 :: Keep the line when it is blank, or the list another mod's uninstall.cmd set
 :: in the same console is used instead.
-set "PRESERVE_FILES="
+set "PRESERVE_FILES=CameraUnlock.ini HeadTracking.ini"
 
 :: --- Loader-specific config (leave the ones that don't apply blank) ---
 set "MANAGED_SUBFOLDER="

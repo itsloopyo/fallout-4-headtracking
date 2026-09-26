@@ -36,8 +36,9 @@ Download [Lopari](https://lopari.app), choose **Fallout 4**, and click
    (`Fallout4HeadTracking.asi`) into the game's exe directory.
 4. Configure your tracker to send UDP to `127.0.0.1` on port `4242`. See
    [Setting Up OpenTrack](#setting-up-opentrack) below.
-5. Launch Fallout 4. On first launch the mod writes `HeadTracking.ini` next
-   to the `.asi` and reads it from there on every launch after.
+5. Launch Fallout 4. On first launch the mod creates `CameraUnlock.ini` next
+   to the `.asi` and reads it from there on every launch after. See
+   [Configuration](#configuration).
 
 If the installer cannot find your game, point it at the install folder
 yourself. Either pass the path as an argument:
@@ -82,8 +83,8 @@ top of its virtual file system. Install into the game folder instead, with
    bundled in our installer ZIP works, renamed to `dxgi.dll`. `dinput8.dll`
    does **not** work here: `Fallout4.exe` never imports it, so the loader is
    never loaded.
-2. Drop `Fallout4HeadTracking.asi` next to `Fallout4.exe`. The mod writes its
-   own `HeadTracking.ini` beside it on first launch.
+2. Drop `Fallout4HeadTracking.asi` next to `Fallout4.exe`. The mod creates its
+   own `CameraUnlock.ini` beside it on first launch.
 
 If you already run ReShade as `dxgi.dll`, install the ASI loader as
 `d3d11.dll` instead (or rename it to one of the other slots above) so the two
@@ -153,7 +154,9 @@ view sits off to one side, centre it in the tracker.
 ## Controls
 
 Two equivalent binding sets - use whichever your keyboard has. The nav-cluster
-keys and the chords do exactly the same thing.
+keys and the chords do exactly the same thing. These are the defaults: each
+action's keys are a list under `[Hotkeys]` in `CameraUnlock.ini`, chords
+included, and any of them can be changed or removed.
 
 | Action                 | Nav-cluster | Chord           |
 |------------------------|-------------|-----------------|
@@ -169,65 +172,127 @@ keys and the chords do exactly the same thing.
 3. Rotational tracking disabled, positional tracking enabled
 4. Back to normal
 
+The tracking mode and the yaw mode are saved to `CameraUnlock.ini` the moment you
+change them, so the next launch starts with the same choice. Toggling tracking on
+or off with `End` lasts for the session only: each launch starts with tracking on
+or off as `EnableOnStartup` says.
+
 ## Configuration
 
-`HeadTracking.ini` sits next to `Fallout4.exe`. It is written with defaults on
-first launch; delete it to reset. Updating the mod never overwrites it.
+<!-- cameraunlock:config -->
+The mod reads its settings from `CameraUnlock.ini` in the game folder, and creates the file when it starts and finds none. Edit it with any text editor.
+
+A setting set to `default` takes its value from `Defaults.ini`, which every head tracking mod that keeps its settings in `CameraUnlock.ini` reads. Head tracking mods that keep their settings in another file do not read it, and neither do earlier versions of this mod. Writing a value in place of `default` changes that setting for this game only. When the mod saves a setting that a hotkey changed in game, it writes the new value in place of `default`, so that setting no longer follows `Defaults.ini` in this game until you set it to `default` again.
+
+`Defaults.ini` is `%AppData%\CameraUnlock\Defaults.ini` on Windows; `$XDG_CONFIG_HOME/CameraUnlock/Defaults.ini` on Linux, or `~/.config/CameraUnlock/Defaults.ini` where `XDG_CONFIG_HOME` is not set, under Wine and Proton too; and `~/Library/Application Support/CameraUnlock/Defaults.ini` on macOS. The mod's log, where it writes one, names the file it read.
+
+When the mod starts and finds no `Defaults.ini`, it creates one holding the built-in values, unless Windows runs the game as a packaged app. The mod never changes `Defaults.ini` after that. Edit it with any text editor.
+
+Earlier versions of the mod kept these settings in `HeadTracking.ini`, in the same folder. The first time this version starts and finds no `CameraUnlock.ini`, it reads your settings from `HeadTracking.ini` and writes them into `CameraUnlock.ini`. It never changes `HeadTracking.ini`, and does not read it again while `CameraUnlock.ini` exists.
+
+A setting that the defaults below set to `default` is written as `default` when the value imported for it equals its default at that start, which is the value `Defaults.ini` gives it, or the built-in value where `Defaults.ini` gives none. It then follows `Defaults.ini`. Every other setting is written with the value imported for it. `RotationEnabled` and `PositionEnabled` are one setting here, the tracking mode, so both are written as `default` or neither is.
+
+Comments, and keys the mod never read, are not carried over. Nor are these, where your old file had them:
+
+- Reticle settings, and a key that toggled the reticle.
+- A sensitivity, scale, deadzone, response curve or axis inversion you changed from its default. Set these in your tracker instead.
+- The setting for a feature that earlier versions shipped switched off while it was untested. It now follows the mod's default.
+
+An older version of the mod reads `HeadTracking.ini` and never reads `CameraUnlock.ini`, so a setting you change after updating is not in `HeadTracking.ini`.
+
+Deleting only `CameraUnlock.ini` makes the next start read `HeadTracking.ini` again. To go back to the defaults, replace everything in `CameraUnlock.ini` with the defaults below. Every setting they set to `default` then follows `Defaults.ini`.
+
+The built-in value of each setting set to `default` below:
+
+- `UdpPort=4242`
+- `EnableOnStartup=true`
+- `WorldSpaceYaw=true`
+- `RotationEnabled=true`
+- `LocalSmoothing=0.0`
+- `RemoteSmoothing=0.15`
+- `PositionEnabled=true`
+- `PositionLimitX=0.3`
+- `PositionLimitY=0.2`
+- `PositionLimitYDown=0.2`
+- `PositionLimitZ=0.4`
+- `PositionLimitZBack=0.1`
+- `ToggleKey=End, Ctrl+Shift+Y`
+- `CycleTrackingModeKey=PageUp, Ctrl+Shift+G`
+- `YawModeKey=PageDown, Ctrl+Shift+H`
+
+With every setting at its default, the file reads:
 
 ```ini
+; Fallout 4 head tracking settings.
+; Comments start with ; and go on their own line. Text after a value is part of the value.
+; Hotkeys are key names such as End, PageUp or Ctrl+Shift+Y. Separate several with commas; leave empty for none.
+; A setting set to default takes its value from Defaults.ini, which every head tracking mod
+; that keeps its settings in CameraUnlock.ini reads: %AppData%\CameraUnlock\Defaults.ini on
+; Windows, $XDG_CONFIG_HOME/CameraUnlock/Defaults.ini (normally ~/.config/CameraUnlock) on
+; Linux, under Wine and Proton too, and ~/Library/Application Support/CameraUnlock/Defaults.ini
+; on macOS. The log names the file it read. Write a value instead of default to change that
+; setting for this game only.
+
+[CameraUnlock]
+; Written by the mod. Leave this section in place.
+ConfigFormat=1
+
 [Network]
-; UDP port for OpenTrack data (default: 4242)
-UDPPort=4242
-
-[Sensitivity]
-; Rotation sensitivity multipliers (1.0 = 1:1)
-YawMultiplier=1.0
-PitchMultiplier=1.0
-RollMultiplier=1.0
-; Smoothing applied when the tracker runs on this machine (loopback).
-; 0 = no smoothing, 1 = heavy. Covers rotation and position.
-LocalSmoothing=0.0
-; Smoothing applied when the tracker is a remote device on the network.
-; 0 = no smoothing, 1 = heavy. Covers rotation and position.
-RemoteSmoothing=0.15
-
-[Position]
-; Position tracking sensitivity (0.1-10.0, higher = more movement)
-SensitivityX=1.0
-SensitivityY=1.0
-SensitivityZ=1.0
-; Position limits in meters (how far the camera can move)
-LimitX=0.30
-LimitY=0.20
-LimitZ=0.40
-; Backward lean limit (prevents camera clipping through player model)
-LimitZBack=0.10
-; Invert position axes
-InvertX=true
-InvertY=false
-InvertZ=true
-; Enable/disable position tracking (6DOF)
-Enabled=true
-
-[Hotkeys]
-; Virtual key codes (hex)
-ToggleKey=0x23         ; End - Enable/disable head tracking
-PositionToggleKey=0x21 ; Page Up - Cycle tracking mode
-YawModeKey=0x22        ; Page Down - Toggle world/local yaw
+; UDP port the mod receives tracker data on (OpenTrack protocol).
+UdpPort=default
 
 [General]
-; Auto-enable tracking on game start
-AutoEnable=true
-; Write notification messages to HeadTracking.log
+; true: head tracking is on when the game starts. ToggleKey turns it on and off.
+EnableOnStartup=default
+; true: yaw turns around the world's up axis. false: around the camera's own up axis.
+WorldSpaceYaw=default
+; true: turning your head turns the view.
+; Tracking mode at startup, with PositionEnabled. The mode hotkey changes both.
+RotationEnabled=default
+; true: write the mod's notices (tracking on or off, a mode change) to HeadTracking.log.
 ShowNotifications=true
-; Yaw mode: true = horizon-locked (default), false = camera-local
-WorldSpaceYaw=true
-```
 
-`WorldSpaceYaw=true` (default) keeps "up" locked to the world horizon, so
-yawing while looking at the floor still pans left and right. Set it to `false`
-for camera-local yaw, which rotates around the camera's current up-axis.
-Toggle it live with `Page Down`.
+[Smoothing]
+; Smoothing when the tracker runs on this PC. 0 is the least, 1 the most.
+LocalSmoothing=default
+; Smoothing when the tracker is another device on the network, such as a phone.
+; 0 is the least, 1 the most.
+RemoteSmoothing=default
+
+[Position]
+; true: moving your head moves the view.
+; Tracking mode at startup, with RotationEnabled. The mode hotkey changes both.
+PositionEnabled=default
+; How far, in metres, leaning left or right can move the view.
+PositionLimitX=default
+; How far, in metres, raising your head can move the view.
+PositionLimitY=default
+; How far, in metres, lowering your head can move the view.
+PositionLimitYDown=default
+; How far, in metres, leaning forward can move the view.
+PositionLimitZ=default
+; How far, in metres, leaning back can move the view.
+PositionLimitZBack=default
+
+[Hotkeys]
+; Turns head tracking on and off.
+ToggleKey=default
+; Changes the tracking mode: rotation and position, rotation only, position only.
+CycleTrackingModeKey=default
+; Switches yaw between the world's up axis and the camera's own (WorldSpaceYaw).
+YawModeKey=default
+; Switches to the next tracker app when more than one sends to the UDP port.
+CycleTrackerSourceKey=Ctrl+Shift+U
+```
+<!-- /cameraunlock:config -->
+
+`WorldSpaceYaw=true` (the built-in value) keeps "up" locked to the world
+horizon, so yawing while looking at the floor still pans left and right. Set it
+to `false` for camera-local yaw, which rotates around the camera's current
+up-axis. Toggle it live with `Page Down`; the mod saves the choice.
+
+The mod has no sensitivity, deadzone or axis inversion settings. It applies the
+pose your tracker sends, so set those in the tracker.
 
 ### Field of view
 
@@ -261,19 +326,20 @@ field of view.
   `127.0.0.1:4242` and must be started before the game. `HeadTracking.log`
   records `First UDP packet received` with the sender address the moment
   anything arrives; if that line is absent the tracker is not reaching the
-  game, so confirm `UDPPort` matches and that Windows Firewall is not blocking
+  game, so confirm `UdpPort` matches and that Windows Firewall is not blocking
   loopback. For a phone app, use your PC's LAN address rather than
   `127.0.0.1`.
 - **Jittery or unstable tracking.** Raise the smoothing value your tracker
   actually uses: `RemoteSmoothing` for a phone or another device on the
   network, `LocalSmoothing` for a tracker running on this PC. Each covers
   rotation and position together.
-  Webcam tracking benefits most from brighter, more even lighting. Lower the
-  sensitivity multipliers if small head movements overshoot.
-- **Wrong rotation axis or inverted movement.** Flip the relevant
-  `[Position] InvertX/InvertY/InvertZ` value. If yaw feels wrong at extreme
-  up or down angles, toggle between horizon-locked and camera-local yaw with
-  `Page Down`.
+  Webcam tracking benefits most from brighter, more even lighting. The mod
+  applies no sensitivity of its own, so if small head movements overshoot,
+  change that in the tracker.
+- **Inverted movement.** The mod applies the axes as the tracker sends them, so
+  an axis that runs the wrong way is corrected in the tracker. If yaw
+  feels wrong at extreme up or down angles, toggle between horizon-locked and
+  camera-local yaw with `Page Down`.
 - **Reporting a crash.** `HeadTracking.log` sits next to `Fallout4.exe` and is
   rewritten from scratch on every launch. The previous launch is kept as
   `HeadTracking.prev.log`, so the session that crashed survives the relaunch
@@ -281,14 +347,15 @@ field of view.
 
 ## Updating
 
-Download the new release and run `install.cmd` again. Your config is
-preserved.
+Download the new release and run `install.cmd` again. The installer ships no
+config, so `CameraUnlock.ini` and `HeadTracking.ini` are left as they are.
 
 ## Uninstalling
 
-Run `uninstall.cmd`. This removes the mod files. The ASI loader is only
-removed if the installer put it there; if you already had your own, it is left
-alone. Use `uninstall.cmd /force` to remove it anyway.
+Run `uninstall.cmd`. This removes the mod files and leaves `CameraUnlock.ini`
+and `HeadTracking.ini` in place, so a reinstall keeps your settings. The ASI
+loader is only removed if the installer put it there; if you already had your
+own, it is left alone. Use `uninstall.cmd /force` to remove it anyway.
 
 ## Building from Source
 

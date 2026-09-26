@@ -5,3 +5,5 @@
 # build's sources byte for byte.
 tests/config_differential/inputs/** -text
 tests/config_differential/oracle/** -text
+# The committed canonical config is the table's fresh render byte for byte, CRLF included.
+HeadTracking.ini -text

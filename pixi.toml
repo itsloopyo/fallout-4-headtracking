@@ -26,6 +26,12 @@ fast-load-restore = "powershell -ExecutionPolicy Bypass -File scripts/fast-load.
 # reader to the published build's. Separate build tree, so it never disturbs build/
 # or bin/.
 test = "powershell -ExecutionPolicy Bypass -File scripts/run-tests.ps1"
+build-tests = "powershell -ExecutionPolicy Bypass -File scripts/run-tests.ps1 -BuildOnly"
+
+# Rewrites HeadTracking.ini, the committed config, from the config table after a change to a
+# row, a comment or a default, then writes the launcher manifest's config descriptor per_game
+# from it. The config tests fail until it has run.
+render-config = { cmd = "build-tests/tests/Debug/fallout4_config_tests.exe --render-config HeadTracking.ini && node cameraunlock-core/scripts/encode-seed.mjs", depends-on = ["build-tests"] }
 
 build = { cmd = "cmake --build build --config Debug", depends-on = ["setup"] }
 build-release = { cmd = "cmake --build build --config Release", depends-on = ["setup"] }
@@ -57,6 +63,11 @@ clean-all = { cmd = """
 
 package = { cmd = "powershell -ExecutionPolicy Bypass -File scripts/package-release.ps1", depends-on = ["build-release", "test"] }
 release = { cmd = "powershell -ExecutionPolicy Bypass -File scripts/release.ps1" }
+
+# Core's manifest validator, run by hand, so it is not wired into `package` or into CI - the
+# release gates that must always run live in the packager instead. It reads the built
+# installer ZIP, hence the dependency.
+validate-manifest = { cmd = "node cameraunlock-core/scripts/validate-manifest.mjs", depends-on = ["package"] }
 show-changelog = { cmd = "powershell -ExecutionPolicy Bypass -File scripts/show-changelog.ps1" }
 
 [dependencies]

@@ -1,24 +1,29 @@
 // SPDX-License-Identifier: MIT
 //
-// Boundary tests for the HeadTracking.ini -> Config path. Every float here ends
-// up in a rotation matrix that the camera hook writes straight into the engine's
-// scene graph, so a non-finite value that survives Load() is not a cosmetic
-// problem: it propagates through cameraRoot into worldToCam and the rendered
-// view never recovers.
+// CameraUnlock.ini against the table: the committed HeadTracking.ini is the table's fresh
+// render byte for byte, the owner creates exactly those bytes, and each toggle's save changes
+// the lines of its own rows and no other byte. `--render-config <path>` writes the fresh render
+// to <path> instead and runs nothing else (pixi run render-config).
 //
-// constants.h before config.h: config.h takes its defaults from the constants
-// and the shipped build gets them through the precompiled header.
+// Every owner here reads and creates a scratch Defaults.ini, never the player's own.
 
-#include "core/constants.h"
 #include "core/config.h"
+
+#include <cameraunlock/config/config_owner.h>
+#include <cameraunlock/config/defaults_file.h>
+#include <cameraunlock/input/key_bindings.h>
 
 #include <Windows.h>
 
-#include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <fstream>
+#include <iterator>
+#include <stdexcept>
 #include <string>
+#include <vector>
 
+namespace cfg = cameraunlock::config;
 using Fallout4HT::Config;
 
 namespace {
@@ -32,144 +37,163 @@ void Check(bool cond, const char* what) {
     }
 }
 
-// A fresh path in %TEMP% per call. Distinct paths also keep Windows' private
-// profile cache out of the way of the read-back assertions.
-std::string TempIniPath() {
-    char dir[MAX_PATH] = {};
-    GetTempPathA(sizeof(dir), dir);
-    char path[MAX_PATH] = {};
-    GetTempFileNameA(dir, "f4ht", 0, path);
-    return std::string(path);
+std::string ReadBytes(const std::wstring& path) {
+    std::ifstream in(path, std::ios::binary);
+    if (!in) throw std::runtime_error("cannot read a test file");
+    return std::string(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
 }
 
-void WriteFileText(const std::string& path, const char* body) {
-    FILE* f = nullptr;
-    fopen_s(&f, path.c_str(), "wb");
-    if (!f) {
-        std::printf("  FAIL: could not write %s\n", path.c_str());
-        ++g_failures;
-        return;
+void WriteBytes(const std::wstring& path, const std::string& bytes) {
+    std::ofstream out(path, std::ios::binary | std::ios::trunc);
+    if (!out) throw std::runtime_error("cannot write a test file");
+    out.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
+}
+
+std::string FreshRender() {
+    return cfg::RenderCanonicalFresh(Fallout4HT::MakeConfigTable(), cfg::RenderHeader{Fallout4HT::kConfigDisplayName});
+}
+
+// A fresh folder in %TEMP%, ending in a separator, with Defaults.ini in a folder of its own.
+struct Scratch {
+    std::wstring folder;
+    std::wstring defaults;
+};
+
+Scratch MakeScratch(const wchar_t* name) {
+    wchar_t temp[MAX_PATH];
+    GetTempPathW(MAX_PATH, temp);
+    const std::wstring root = std::wstring(temp) + L"fallout4-config-tests-" + std::to_wstring(GetCurrentProcessId());
+    CreateDirectoryW(root.c_str(), nullptr);
+    const std::wstring dir = root + L"\\" + name;
+    if (!CreateDirectoryW(dir.c_str(), nullptr)) throw std::runtime_error("cannot create a scratch folder");
+    const std::wstring global = dir + L"\\global";
+    if (!CreateDirectoryW(global.c_str(), nullptr)) throw std::runtime_error("cannot create a scratch folder");
+    return {dir + L"\\", global + L"\\Defaults.ini"};
+}
+
+cfg::ConfigOwnerOptions<Config> Options(const Scratch& s) {
+    return Fallout4HT::MakeConfigOwnerOptions(s.folder, cfg::DefaultsFile::At(s.defaults));
+}
+
+std::vector<std::string> Lines(const std::string& bytes) {
+    std::vector<std::string> lines;
+    size_t start = 0;
+    while (start < bytes.size()) {
+        const size_t end = bytes.find("\r\n", start);
+        if (end == std::string::npos) {
+            lines.push_back(bytes.substr(start));
+            break;
+        }
+        lines.push_back(bytes.substr(start, end - start));
+        start = end + 2;
     }
-    std::fwrite(body, 1, std::strlen(body), f);
-    std::fclose(f);
+    return lines;
 }
 
-bool AllFinite(const Config& c) {
-    return std::isfinite(c.yawMultiplier) && std::isfinite(c.pitchMultiplier)
-        && std::isfinite(c.rollMultiplier)
-        && std::isfinite(c.localSmoothing) && std::isfinite(c.remoteSmoothing)
-        && std::isfinite(c.positionSensitivityX) && std::isfinite(c.positionSensitivityY)
-        && std::isfinite(c.positionSensitivityZ)
-        && std::isfinite(c.positionLimitX) && std::isfinite(c.positionLimitY)
-        && std::isfinite(c.positionLimitZ) && std::isfinite(c.positionLimitZBack);
+// The lines of `after` that differ from `before`, which must have as many.
+std::vector<std::string> ChangedLines(const std::string& before, const std::string& after) {
+    const std::vector<std::string> a = Lines(before);
+    const std::vector<std::string> b = Lines(after);
+    if (a.size() != b.size()) return {"a line was added or removed"};
+    std::vector<std::string> changed;
+    for (size_t i = 0; i < a.size(); ++i) {
+        if (a[i] != b[i]) changed.push_back(b[i]);
+    }
+    return changed;
 }
 
-// strtod, which IniReader parses floats with, accepts "nan" and "inf" and
-// overflows 1e400 to +inf. This is the end-to-end version of the checks above:
-// a hand-edited or corrupted INI must not be able to put either into the config.
-void LoadSanitizesHostileIni() {
-    std::printf("Config::Load - hostile INI\n");
-    const std::string path = TempIniPath();
-    WriteFileText(path,
-        "[Network]\r\n"
-        "UDPPort=70000\r\n"
-        "[Sensitivity]\r\n"
-        "YawMultiplier=nan\r\n"
-        "PitchMultiplier=inf\r\n"
-        "RollMultiplier=-inf\r\n"
-        "LocalSmoothing=1e400\r\n"
-        "RemoteSmoothing=nan\r\n"
-        "[Position]\r\n"
-        "SensitivityX=nan\r\n"
-        "SensitivityY=1e400\r\n"
-        "SensitivityZ=-1e400\r\n"
-        "LimitX=nan\r\n"
-        "LimitY=inf\r\n"
-        "LimitZ=1e400\r\n"
-        "LimitZBack=nan\r\n");
-
-    const Config defaults{};
-    Config c;
-    Check(c.Load(path.c_str()), "hostile INI still loads");
-    Check(AllFinite(c), "no non-finite value survives Load");
-    Check(c.udpPort == defaults.udpPort, "out-of-range UDP port keeps the default");
-    Check(c.yawMultiplier >= 0.1f && c.yawMultiplier <= 5.0f, "yaw lands in range");
-    Check(c.localSmoothing >= 0.0f && c.localSmoothing <= 1.0f, "local smoothing lands in range");
-    Check(c.remoteSmoothing >= 0.0f && c.remoteSmoothing <= 1.0f, "remote smoothing lands in range");
-    Check(c.positionLimitZ >= 0.01f && c.positionLimitZ <= 2.0f, "position limit lands in range");
-
-    DeleteFileA(path.c_str());
+void CommittedFileIsTheFreshRender() {
+    std::printf("HeadTracking.ini, the committed file, is the table's fresh render\n");
+    Check(ReadBytes(F4_COMMITTED_CONFIG) == FreshRender(), "run pixi run render-config after changing a row");
 }
 
-void LoadMissingFileKeepsDefaults() {
-    std::printf("Config::Load - missing file\n");
-    const Config defaults{};
-
-    Config c;
-    c.yawMultiplier = 4.0f;
-    const bool loaded = c.Load("Z:\\fallout4-headtracking-does-not-exist\\HeadTracking.ini");
-
-    Check(!loaded, "a missing file reports failure");
-    Check(c.yawMultiplier == defaults.yawMultiplier, "state resets to defaults");
-    Check(c.udpPort == defaults.udpPort, "port resets to the default");
+void EveryHotkeyDefaultParses() {
+    std::printf("every hotkey list the table defaults to parses\n");
+    const Config defaults = Fallout4HT::MakeConfigTable().defaults();
+    for (const std::string* list : {&defaults.toggle_key_name, &defaults.cycle_tracking_mode_key_name,
+                                    &defaults.yaw_mode_key_name, &defaults.cycle_tracker_source_key_name}) {
+        Check(cameraunlock::input::ParseKeyBindings(*list).ok(), list->c_str());
+    }
+    Check(defaults.toggle_key_name == "End, Ctrl+Shift+Y", "ToggleKey is the fleet's default");
+    Check(defaults.cycle_tracking_mode_key_name == "PageUp, Ctrl+Shift+G", "CycleTrackingModeKey is the fleet's default");
+    Check(defaults.yaw_mode_key_name == "PageDown, Ctrl+Shift+H", "YawModeKey is the fleet's default");
+    Check(defaults.cycle_tracker_source_key_name == "Ctrl+Shift+U", "CycleTrackerSourceKey keeps the chord it had");
 }
 
-// The sanitization must not cost normal round-tripping: a tuned config written
-// by Save has to come back unchanged.
-void SaveLoadRoundTrip() {
-    std::printf("Config::Save + Config::Load round trip\n");
-    const std::string path = TempIniPath();
-
-    Config out;
-    out.udpPort = 5555;
-    out.yawMultiplier = 1.25f;
-    out.localSmoothing = 0.5f;
-    out.remoteSmoothing = 0.25f;
-    out.positionLimitZ = 0.6f;
-    out.positionEnabled = false;
-    out.worldSpaceYaw = false;
-    out.toggleKey = 0x23;
-    Check(out.Save(path.c_str()), "Save writes the file");
-
-    Config back;
-    Check(back.Load(path.c_str()), "Load reads it back");
-    Check(back.udpPort == 5555, "port round trips");
-    Check(std::fabs(back.yawMultiplier - 1.25f) < 1e-4f, "yaw multiplier round trips");
-    Check(std::fabs(back.localSmoothing - 0.5f) < 1e-4f, "local smoothing round trips");
-    Check(std::fabs(back.remoteSmoothing - 0.25f) < 1e-4f, "remote smoothing round trips");
-    Check(std::fabs(back.positionLimitZ - 0.6f) < 1e-4f, "position limit round trips");
-    Check(back.positionEnabled == false, "position enabled round trips");
-    Check(back.worldSpaceYaw == false, "yaw mode round trips");
-    Check(back.toggleKey == 0x23, "hotkey round trips");
-
-    DeleteFileA(path.c_str());
+void FirstLaunchCreatesTheCommittedFile() {
+    std::printf("the first launch with no file creates the committed bytes\n");
+    const Scratch s = MakeScratch(L"created");
+    cfg::ConfigOwner<Config> owner(Options(s));
+    const cfg::ConfigLoadResult<Config> loaded = owner.Load();
+    Check(loaded.status == cfg::ConfigLoadStatus::Created, "the load is Created");
+    Check(ReadBytes(s.folder + Fallout4HT::kConfigFileName) == FreshRender(), "the created file is the fresh render");
+    Check(GetFileAttributesW((s.folder + Fallout4HT::kLegacyConfigFileName).c_str()) == INVALID_FILE_ATTRIBUTES,
+          "no HeadTracking.ini is written");
 }
 
-// There is no separate LimitYDown key in this mod's INI: the single configured
-// vertical limit is meant to apply both up and down, the way
-// PositionSettings::Symmetric does. Left unmirrored, limit_y_down silently
-// pins at the PositionSettings struct default (0.20m) no matter what LimitY
-// is set to, so raising LimitY widens upward travel only.
-void BuildPositionSettingsMirrorsLimitYDown() {
-    std::printf("Config::BuildPositionSettings mirrors LimitY into limit_y_down\n");
+void TogglesSaveTheirRowsOnly() {
+    std::printf("each toggle's save writes its own rows and no other byte\n");
+    const Scratch s = MakeScratch(L"saves");
+    const std::wstring path = s.folder + Fallout4HT::kConfigFileName;
+    {
+        cfg::ConfigOwner<Config> owner(Options(s));
+        owner.Load();
+    }
+    const std::string fresh = ReadBytes(path);
 
-    Config c;
-    c.positionLimitY = 0.55f;
-    const cameraunlock::PositionSettings settings = c.BuildPositionSettings();
+    cfg::ConfigOwner<Config> owner(Options(s));
+    owner.Load();
+    const cfg::ConfigSaveResult yaw = owner.Save([](Config& c) { c.world_space_yaw = false; });
+    Check(yaw.status == cfg::ConfigSaveStatus::Saved, "the yaw save is Saved");
+    Check(!yaw.log.empty(), "the log says WorldSpaceYaw no longer follows Defaults.ini");
+    const std::string afterYaw = ReadBytes(path);
+    const std::vector<std::string> yawLines = ChangedLines(fresh, afterYaw);
+    Check(yawLines.size() == 1 && yawLines[0] == "WorldSpaceYaw=false", "only WorldSpaceYaw=default became false");
 
-    Check(std::fabs(settings.limit_y - 0.55f) < 1e-6f, "limit_y takes the configured value");
-    Check(std::fabs(settings.limit_y_down - 0.55f) < 1e-6f,
-          "limit_y_down mirrors the configured LimitY rather than staying at the struct default");
+    const cfg::ConfigSaveResult mode = owner.Save([](Config& c) {
+        c.rotation_enabled = true;
+        c.position_enabled = false;
+    });
+    Check(mode.status == cfg::ConfigSaveStatus::Saved, "the mode save is Saved");
+    const std::vector<std::string> modeLines = ChangedLines(afterYaw, ReadBytes(path));
+    Check(modeLines.size() == 2 && modeLines[0] == "RotationEnabled=true" && modeLines[1] == "PositionEnabled=false",
+          "a mode change writes both rows of the pair and nothing else");
+
+    bool threw = false;
+    try {
+        owner.Save([](Config& c) { c.enable_on_startup = false; });
+    } catch (const std::exception&) {
+        threw = true;
+    }
+    Check(threw, "EnableOnStartup is not Writable: End never persists");
+
+    cfg::ConfigOwner<Config> again(Options(s));
+    const cfg::ConfigLoadResult<Config> reread = again.Load();
+    Check(reread.status == cfg::ConfigLoadStatus::Canonical, "the saved file reads back as canonical");
+    Check(!reread.config.world_space_yaw, "the yaw choice survives a restart");
+    Check(reread.config.rotation_enabled && !reread.config.position_enabled, "the mode survives a restart");
 }
 
 }  // namespace
 
-int main() {
-    std::printf("Fallout4HeadTracking config tests\n=================================\n");
-    LoadSanitizesHostileIni();
-    LoadMissingFileKeepsDefaults();
-    SaveLoadRoundTrip();
-    BuildPositionSettingsMirrorsLimitYDown();
+int main(int argc, char** argv) {
+    try {
+        if (argc == 3 && std::strcmp(argv[1], "--render-config") == 0) {
+            const std::string path = argv[2];
+            WriteBytes(std::wstring(path.begin(), path.end()), FreshRender());
+            std::printf("wrote %s\n", argv[2]);
+            return 0;
+        }
+
+        std::printf("Fallout4HeadTracking config tests\n=================================\n");
+        CommittedFileIsTheFreshRender();
+        EveryHotkeyDefaultParses();
+        FirstLaunchCreatesTheCommittedFile();
+        TogglesSaveTheirRowsOnly();
+    } catch (const std::exception& e) {
+        std::printf("FAIL: %s\n", e.what());
+        return 1;
+    }
 
     if (g_failures == 0) {
         std::printf("All tests passed!\n");

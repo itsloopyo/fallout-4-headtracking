@@ -47,6 +47,35 @@ std::string GetModuleDirectory() {
 
 } // namespace
 
+std::wstring GetModuleDirectoryW() {
+    HMODULE hModule = nullptr;
+    if (!GetModuleHandleExW(
+            GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+            reinterpret_cast<LPCWSTR>(&DummyAddress),
+            &hModule) || hModule == nullptr) {
+        return L"";
+    }
+
+    // The same truncation rule as GetModuleDirectory: a return equal to the
+    // buffer size means the path did not fit. Eight doublings of MAX_PATH pass
+    // the 32767-character limit of a wide path.
+    DWORD bufSize = MAX_PATH;
+    for (int attempt = 0; attempt < 8; ++attempt) {
+        std::vector<wchar_t> buf(bufSize);
+        SetLastError(0);
+        const DWORD ret = GetModuleFileNameW(hModule, buf.data(), bufSize);
+        if (ret == 0) return L"";
+        if (ret < bufSize && GetLastError() != ERROR_INSUFFICIENT_BUFFER) {
+            const std::wstring path(buf.data(), ret);
+            const size_t lastSlash = path.find_last_of(L"\\/");
+            if (lastSlash == std::wstring::npos) return L"";
+            return path.substr(0, lastSlash + 1);
+        }
+        bufSize *= 2;
+    }
+    return L"";
+}
+
 std::string GetModulePath(const char* filename) {
     std::string dir = GetModuleDirectory();
     if (dir.empty()) {

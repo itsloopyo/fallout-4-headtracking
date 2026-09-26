@@ -14,6 +14,9 @@
 #include "hooks/camera_math.h"
 #include "hooks/crosshair_layout.h"
 
+#include <cameraunlock/data/position_settings.h>
+#include <cameraunlock/processing/position_processor.h>
+
 #include <cmath>
 #include <cstdio>
 
@@ -297,6 +300,9 @@ void ChildLocalSolveRoundTrips() {
 void LeanMatchesPreExtraction() {
     std::printf("TrackerLeanToWorldUnits matches the pre-extraction offset\n");
 
+    // The boundary now negates x, which [Position] InvertX=true did inside the
+    // position processor before, so the pre-extraction offset is the one it
+    // gave for the negated x.
     const float kOffsets[] = { 0.0f, 0.05f, -0.05f, 0.3f, -0.1f };
     bool matches = true;
     for (float x : kOffsets) {
@@ -304,7 +310,7 @@ void LeanMatchesPreExtraction() {
             for (float z : kOffsets) {
                 const NiMatrix33 basis = SampleBasis(41.0f, -13.0f, 6.0f);
                 const NiPoint3 got = TrackerLeanToWorldUnits(basis, x, y, z);
-                const NiPoint3 want = RefLean(basis, x, y, z);
+                const NiPoint3 want = RefLean(basis, -x, y, z);
                 if (got.x != want.x || got.y != want.y || got.z != want.z) matches = false;
             }
         }
@@ -343,6 +349,50 @@ void LeanMatchesPreExtraction() {
         }
     }
     Check(agree, "the local and world lean agree axis for axis under an identity basis");
+}
+
+// Every build before the canonical config inverted x in the position processor
+// ([Position] InvertX=true, shipped on) and handed the result to a boundary that
+// did not. This build inverts nothing in the processor and negates x at the
+// boundary. The processor's x limit and its smoothing are symmetric in x, so the
+// two have to agree bit for bit on every frame, clamped or not, smoothed or not.
+void InvertXFoldMatchesProcessorInversion() {
+    std::printf("the x negation at the boundary matches the processor's InvertX\n");
+
+    cameraunlock::PositionSettings inverted;
+    inverted.invert_x = true;
+    cameraunlock::PositionSettings plain;
+
+    const float kRaw[][3] = {
+        { 0.0f, 0.0f, 0.0f }, { 0.05f, 0.02f, -0.1f }, { -0.12f, 0.3f, 0.2f }, { 0.6f, -0.4f, -0.7f },
+        { -0.9f, 0.1f, 0.05f }, { 0.31f, -0.21f, -0.41f }, { -0.017f, 0.0f, 0.099f }, { 0.25f, 0.25f, 0.25f },
+    };
+    const float kDt[] = { 1.0f / 60.0f, 1.0f / 144.0f, 0.05f };
+    const NiMatrix33 basis = SampleBasis(23.0f, 11.0f, -4.0f);
+
+    bool matches = true;
+    for (bool remote : { false, true }) {
+        for (float dt : kDt) {
+            cameraunlock::PositionProcessor before;
+            cameraunlock::PositionProcessor after;
+            before.SetSettings(inverted);
+            after.SetSettings(plain);
+            before.SetIsRemoteConnection(remote);
+            after.SetIsRemoteConnection(remote);
+            int64_t stamp = 1;
+            for (int pass = 0; pass < 3; ++pass) {
+                for (const auto& raw : kRaw) {
+                    const cameraunlock::PositionData sample(raw[0], raw[1], raw[2], stamp++);
+                    const cameraunlock::math::Vec3 a = before.Process(sample, cameraunlock::math::Quat4(), dt);
+                    const cameraunlock::math::Vec3 b = after.Process(sample, cameraunlock::math::Quat4(), dt);
+                    const NiPoint3 old = RefLean(basis, a.x, a.y, a.z);
+                    const NiPoint3 now = TrackerLeanToWorldUnits(basis, b.x, b.y, b.z);
+                    if (old.x != now.x || old.y != now.y || old.z != now.z) matches = false;
+                }
+            }
+        }
+    }
+    Check(matches, "every frame leans the same, locally and remotely smoothed");
 }
 
 void AimProjectionMatchesPreExtraction() {
@@ -491,6 +541,7 @@ int main() {
     HeadRotationMatchesPreExtraction();
     ChildLocalSolveRoundTrips();
     LeanMatchesPreExtraction();
+    InvertXFoldMatchesProcessorInversion();
     AimProjectionMatchesPreExtraction();
     CrosshairStageOffsetMatchesPreExtraction();
 
