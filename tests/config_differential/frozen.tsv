@@ -1,0 +1,38 @@
+# The config differential test's record: the published build, the frozen legacy reader, the
+# core sources it compiles, and the oracle and inputs the test measures it against.
+# check-frozen.ps1 fails when a working-tree path below stops matching its hash. Rows naming
+# <commit>:<path> are provenance, the blobs the oracle and the import were taken from, and are
+# not checked.
+#
+# Published builds: only the rolling dev pre-release 0.0.0-nightly.20260909.fbefff4 at fbefff4
+# (cameraunlock-core 9d86b01). No v* release. The frozen reader is src/core/config.cpp's
+# reading half as of 90bba2a (cameraunlock-core def74d7), the same bytes as at fbefff4.
+#
+# path	sha256	what
+src/legacy_config/legacy_config.h	56b7e63b9ce30aa0a670c7b34ed3bc5366e067f62554538cd6db6e57dec9a46c	the frozen reader
+src/legacy_config/legacy_config.cpp	7442742da0e5c24ac833152f859b84f626740b4d8d7f9b6b355750e403a8b5af	the frozen reader
+cameraunlock-core/cpp/include/cameraunlock/config/ini_reader.h	a7ffb44210ff59672fa97e8e5feaa2cb3e81938fcc0334a384c68bc371b3857a	compiled by the import and the oracle; the same bytes at 9d86b01 and def74d7
+cameraunlock-core/cpp/src/config/ini_reader.cpp	e01515c2656aaf533bae4350dc45b702c3e3d4043935743dcc9bd5ea581fbe1c	compiled by the import and the oracle; the same bytes at 9d86b01 and def74d7
+cameraunlock-core/cpp/include/cameraunlock/logging/file_log.h	43bdd2ef8554c78e5f440333463750c13b95110fe672b0b6e273244df9e7d169	compiled by the import and the oracle; the same bytes at 9d86b01 and def74d7
+cameraunlock-core/cpp/src/logging/file_log.cpp	73c53c2baa06bbfebe8211f62678aa2b60cb95f604743d3686951ba56b87ea47	compiled by the import and the oracle; the same bytes at 9d86b01 and def74d7
+cameraunlock-core/cpp/include/cameraunlock/math/finite_utils.h	c59772d698d54ade3374ee1221b74f5563a86d76f0eb34a989ef7efab389c0ad	the oracle's SanitizeFinite, which the import carries a copy of; the same bytes at 9d86b01
+cameraunlock-core/cpp/include/cameraunlock/data/position_settings.h	b24dceb8e25475aebc5a468a5c7362a4a4e64204d183d1408525345f32f547f5	the oracle's defaults; the same bytes at 9d86b01
+cameraunlock-core/cpp/include/cameraunlock/math/smoothing_utils.h	fc2146f8c585e5f610c7234e302f59de4945679cfa28ff479ca47477ec073f22	the oracle's defaults; the same bytes at 9d86b01
+tests/config_differential/oracle/src/pch.h	481453c02f5dbdf3960b37679746651f0e5324065f95c1a599f0ae00cf0c484d	the oracle; fbefff4:src/pch.h byte for byte
+tests/config_differential/oracle/src/core/config.h	bdd76cec09b786ac26e9184d43172f9f3a0c431b6091cb72792101f33c2a858c	the oracle; fbefff4:src/core/config.h byte for byte
+tests/config_differential/oracle/src/core/config.cpp	45f870528977a89b3b5b99234565ed64ea645049c0cc0b218c2a11f21dc22ff3	the oracle; fbefff4:src/core/config.cpp byte for byte
+tests/config_differential/oracle/src/core/constants.h	790035db328a1ec770d812eaee2ae8dd4404db69c1f206a9f82db4f722047e29	the oracle; fbefff4:src/core/constants.h byte for byte
+tests/config_differential/oracle/src/core/logging.h	b722180f0e7811d9941f58c8b26a82aa7788b23da7a0e99f0884d3249a6bd3c0	the oracle; fbefff4:src/core/logging.h byte for byte
+tests/config_differential/inputs/shipped-dev.ini	0949a2872ce44fca4a195a44516d4e8d4923eebe4a203f9d49f7c8a122e9e5a0	the dev installer ZIP's plugins/HeadTracking.ini; fbefff4:HeadTracking.ini with CRLF line ends. Its launcher manifest seeds nothing, and its install.cmd did not copy the file
+tests/config_differential/inputs/committed-683fc72.ini	73526e015272452492acf5803eb7ed8b1df6f2c0023bd6d8d19cd6caa64f1d6e	683fc72:HeadTracking.ini, the version committed at fbefff4
+tests/config_differential/inputs/committed-4d6c03a.ini	38ab375a2cf251fd8875c785e1da433aaf96164816f00875a79125f7dcc3b0ae	4d6c03a:HeadTracking.ini, the only other version committed up to fbefff4
+tests/config_differential/inputs/first-run-dev.ini	db969504564b121b60c6ebd08cb1d8532d4cdaf0431b86085ae5b5140362bb21	the first-run output of dev fbefff4, extracted once from the oracle with --first-run
+fbefff4:HeadTracking.ini	73526e015272452492acf5803eb7ed8b1df6f2c0023bd6d8d19cd6caa64f1d6e	the shipped file's blob
+fbefff4:src/core/config.h	bdd76cec09b786ac26e9184d43172f9f3a0c431b6091cb72792101f33c2a858c	oracle source
+fbefff4:src/core/config.cpp	45f870528977a89b3b5b99234565ed64ea645049c0cc0b218c2a11f21dc22ff3	oracle source
+fbefff4:src/core/mod.cpp	df2aed01e9b41a4d6abddcd557933957a859139218659db8e4c7a3f50b92cf33	the published startup code the test models (Mod::LoadConfig, Mod::Initialize, Mod::ConfigureSession)
+fbefff4:src/core/hotkeys.cpp	02fc452505ef2f8303e4ec74c6f0e64f3040c7d265f92d1c76ecf60c1cfe49fc	the published hotkey registration the test models
+90bba2a:src/core/config.h	bdd76cec09b786ac26e9184d43172f9f3a0c431b6091cb72792101f33c2a858c	the reader the import was frozen from
+90bba2a:src/core/config.cpp	45f870528977a89b3b5b99234565ed64ea645049c0cc0b218c2a11f21dc22ff3	the reader the import was frozen from
+90bba2a:src/core/mod.cpp	998293684f02ffad1ad2933213baa5fb3b0019d2681e241fdd55a4bab29da201	the startup code the import was frozen beside
+90bba2a:src/core/hotkeys.cpp	02fc452505ef2f8303e4ec74c6f0e64f3040c7d265f92d1c76ecf60c1cfe49fc	the hotkey registration the import was frozen beside

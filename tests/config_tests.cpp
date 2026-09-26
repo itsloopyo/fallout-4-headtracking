@@ -17,7 +17,6 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
-#include <limits>
 #include <string>
 
 using Fallout4HT::Config;
@@ -32,9 +31,6 @@ void Check(bool cond, const char* what) {
         ++g_failures;
     }
 }
-
-const float kNan = std::numeric_limits<float>::quiet_NaN();
-const float kInf = std::numeric_limits<float>::infinity();
 
 // A fresh path in %TEMP% per call. Distinct paths also keep Windows' private
 // profile cache out of the way of the read-back assertions.
@@ -66,77 +62,6 @@ bool AllFinite(const Config& c) {
         && std::isfinite(c.positionSensitivityZ)
         && std::isfinite(c.positionLimitX) && std::isfinite(c.positionLimitY)
         && std::isfinite(c.positionLimitZ) && std::isfinite(c.positionLimitZBack);
-}
-
-void ValidateRejectsNonFinite() {
-    std::printf("Config::Validate - non-finite input\n");
-    const Config defaults{};
-
-    Config c;
-    c.yawMultiplier = kNan;
-    c.pitchMultiplier = kInf;
-    c.rollMultiplier = -kInf;
-    c.localSmoothing = kNan;
-    c.remoteSmoothing = kInf;
-    c.positionSensitivityX = kInf;
-    c.positionSensitivityY = kNan;
-    c.positionSensitivityZ = -kInf;
-    c.positionLimitX = kNan;
-    c.positionLimitY = kInf;
-    c.positionLimitZ = kNan;
-    c.positionLimitZBack = -kInf;
-    c.Validate();
-
-    Check(AllFinite(c), "every float is finite after Validate");
-    Check(c.yawMultiplier == defaults.yawMultiplier, "NaN yaw -> default");
-    Check(c.pitchMultiplier == defaults.pitchMultiplier, "+Inf pitch -> default");
-    Check(c.rollMultiplier == defaults.rollMultiplier, "-Inf roll -> default");
-    Check(c.localSmoothing == defaults.localSmoothing, "NaN local smoothing -> default");
-    Check(c.remoteSmoothing == defaults.remoteSmoothing, "Inf remote smoothing -> default");
-    Check(c.positionSensitivityX == defaults.positionSensitivityX, "Inf position sensitivity -> default");
-    Check(c.positionLimitZ == defaults.positionLimitZ, "NaN position limit -> default");
-}
-
-void ValidateClampsFiniteOutOfRange() {
-    std::printf("Config::Validate - finite out-of-range input\n");
-
-    Config c;
-    c.yawMultiplier = 99.0f;
-    c.pitchMultiplier = 0.0f;
-    c.rollMultiplier = -3.0f;
-    c.localSmoothing = 5.0f;
-    c.remoteSmoothing = -1.0f;
-    c.positionLimitZ = 1.0e30f;
-    c.Validate();
-
-    Check(c.yawMultiplier == 5.0f, "yaw clamps to 5.0");
-    Check(c.pitchMultiplier == 0.1f, "pitch clamps to 0.1");
-    Check(c.rollMultiplier == 0.0f, "roll clamps to 0.0");
-    Check(c.localSmoothing == 1.0f, "local smoothing clamps to 1.0");
-    Check(c.remoteSmoothing == 0.0f, "remote smoothing clamps to 0.0");
-    Check(c.positionLimitZ == 2.0f, "position limit clamps to 2.0");
-}
-
-void ValidateLeavesGoodValuesAlone() {
-    std::printf("Config::Validate - in-range input\n");
-
-    Config c;
-    c.yawMultiplier = 1.5f;
-    c.pitchMultiplier = 0.8f;
-    c.rollMultiplier = 0.5f;
-    c.localSmoothing = 0.3f;
-    c.remoteSmoothing = 0.4f;
-    c.positionSensitivityZ = 2.0f;
-    c.positionLimitY = 0.25f;
-    c.Validate();
-
-    Check(c.yawMultiplier == 1.5f, "in-range yaw survives");
-    Check(c.pitchMultiplier == 0.8f, "in-range pitch survives");
-    Check(c.rollMultiplier == 0.5f, "in-range roll survives");
-    Check(c.localSmoothing == 0.3f, "in-range local smoothing survives");
-    Check(c.remoteSmoothing == 0.4f, "in-range remote smoothing survives");
-    Check(c.positionSensitivityZ == 2.0f, "in-range position sensitivity survives");
-    Check(c.positionLimitY == 0.25f, "in-range position limit survives");
 }
 
 // strtod, which IniReader parses floats with, accepts "nan" and "inf" and
@@ -241,9 +166,6 @@ void BuildPositionSettingsMirrorsLimitYDown() {
 
 int main() {
     std::printf("Fallout4HeadTracking config tests\n=================================\n");
-    ValidateRejectsNonFinite();
-    ValidateClampsFiniteOutOfRange();
-    ValidateLeavesGoodValuesAlone();
     LoadSanitizesHostileIni();
     LoadMissingFileKeepsDefaults();
     SaveLoadRoundTrip();

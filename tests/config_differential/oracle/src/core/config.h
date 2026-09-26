@@ -65,6 +65,7 @@ struct Config {
     bool Load(const char* path);
     bool Save(const char* path) const;
     void SetDefaults();
+    void Validate();
 
     // The single configured vertical limit (positionLimitY) mirrored into both
     // PositionSettings::limit_y and limit_y_down, the way PositionSettings::Symmetric

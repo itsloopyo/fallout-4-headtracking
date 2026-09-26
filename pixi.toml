@@ -22,8 +22,9 @@ update-deps = "powershell -ExecutionPolicy Bypass -File scripts/update-deps.ps1"
 fast-load = "powershell -ExecutionPolicy Bypass -File scripts/fast-load.ps1"
 fast-load-restore = "powershell -ExecutionPolicy Bypass -File scripts/fast-load.ps1 -Restore"
 
-# Native unit tests for the config boundary. Separate build tree, so it never
-# disturbs build/ or bin/.
+# Native unit tests, and the config differential test that holds the frozen legacy
+# reader to the published build's. Separate build tree, so it never disturbs build/
+# or bin/.
 test = "powershell -ExecutionPolicy Bypass -File scripts/run-tests.ps1"
 
 build = { cmd = "cmake --build build --config Debug", depends-on = ["setup"] }
@@ -54,7 +55,7 @@ clean-all = { cmd = """
     powershell -Command "if (Test-Path 'build') { Remove-Item 'build' -Recurse -Force }; if (Test-Path 'build-tests') { Remove-Item 'build-tests' -Recurse -Force }; if (Test-Path 'release') { Remove-Item 'release' -Recurse -Force }; Write-Host 'All build artifacts cleaned' -ForegroundColor Green"
 """ }
 
-package = { cmd = "powershell -ExecutionPolicy Bypass -File scripts/package-release.ps1", depends-on = ["build-release"] }
+package = { cmd = "powershell -ExecutionPolicy Bypass -File scripts/package-release.ps1", depends-on = ["build-release", "test"] }
 release = { cmd = "powershell -ExecutionPolicy Bypass -File scripts/release.ps1" }
 show-changelog = { cmd = "powershell -ExecutionPolicy Bypass -File scripts/show-changelog.ps1" }
 

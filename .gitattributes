@@ -1,3 +1,7 @@
 * text=auto eol=lf
 *.cmd text eol=crlf
 *.bat text eol=crlf
+# Differential test inputs are byte-exact player files, and the oracle is the published
+# build's sources byte for byte.
+tests/config_differential/inputs/** -text
+tests/config_differential/oracle/** -text

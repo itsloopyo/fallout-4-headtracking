@@ -33,6 +33,7 @@ set(MOD_SOURCES
     src/dllmain.cpp
     src/core/mod.cpp
     src/core/config.cpp
+    src/legacy_config/legacy_config.cpp
     src/core/hotkeys.cpp
     src/core/path_utils.cpp
     src/core/seh_guard.cpp
@@ -137,7 +138,38 @@ if(FALLOUT4_BUILD_TESTS)
     fallout4_add_test(fallout4_config_tests
         tests/config_tests.cpp
         src/core/config.cpp
+        src/legacy_config/legacy_config.cpp
     )
+
+    # The config differential test. The oracle is the dev pre-release's reader (fbefff4), the
+    # only published build, copied byte for byte into tests/config_differential/oracle; renaming
+    # its namespace lets it link beside this build's. oracle_adapter.cpp copies its Config out
+    # for the test. Every core source it compiles is the same bytes at that build's pin.
+    set(F4_ORACLE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/tests/config_differential/oracle)
+    add_library(f4_config_oracle STATIC
+        ${F4_ORACLE_DIR}/src/core/config.cpp
+        tests/config_differential/oracle_adapter.cpp
+    )
+    target_include_directories(f4_config_oracle PRIVATE
+        ${F4_ORACLE_DIR}/src
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/config_differential)
+    target_compile_definitions(f4_config_oracle PRIVATE Fallout4HT=f4_oracle)
+    target_link_libraries(f4_config_oracle PRIVATE cameraunlock)
+
+    fallout4_add_test(fallout4_config_differential
+        tests/config_differential/differential_tests.cpp
+        src/legacy_config/legacy_config.cpp
+    )
+    target_include_directories(fallout4_config_differential PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/config_differential)
+    target_compile_definitions(fallout4_config_differential PRIVATE
+        F4_DIFFERENTIAL_INPUTS="${CMAKE_CURRENT_SOURCE_DIR}/tests/config_differential/inputs")
+    target_link_libraries(fallout4_config_differential PRIVATE f4_config_oracle)
+
+    # The frozen reader, the core sources it compiles, the oracle and the inputs against the
+    # hashes tests/config_differential/frozen.tsv records.
+    add_test(NAME fallout4_config_frozen COMMAND powershell -NoProfile -ExecutionPolicy Bypass
+        -File ${CMAKE_CURRENT_SOURCE_DIR}/tests/config_differential/check-frozen.ps1)
 
     fallout4_add_test(fallout4_fov_tests
         tests/fov_tests.cpp
