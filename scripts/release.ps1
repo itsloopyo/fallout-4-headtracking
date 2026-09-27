@@ -116,6 +116,8 @@ try {
     exit 1
 }
 
+Assert-ReleaseNotBelowCanonicalSince -RepoRoot $projectDir -Version $Version
+
 $tagName = "v$Version"
 
 # Step 2: git preconditions
