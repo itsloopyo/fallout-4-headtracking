@@ -2,9 +2,7 @@
 
 ![Fallout 4 running with this mod](https://raw.githubusercontent.com/itsloopyo/fallout-4-headtracking/main/assets/readme-clip.gif)
 
-*Fallout 4 footage (c) Bethesda Game Studios / Bethesda Softworks, recorded on a legitimately purchased copy and shown only to demonstrate this mod. It is not covered by this project's MIT licence - see [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).*
-
-An unofficial head tracking mod for Fallout 4 that moves the view with your head while your mouse or controller keeps aiming, driven by OpenTrack over UDP, with no VR headset required.
+An unofficial head tracking mod for Fallout 4 that moves the view with your head while your mouse or controller keeps aiming, driven by a webcam, phone, or any OpenTrack compatible tracker, with no VR headset required.
 
 ## Features
 
@@ -348,12 +346,12 @@ field of view.
 ## Updating
 
 Download the new release and run `install.cmd` again. The installer ships no
-config, so `CameraUnlock.ini` and `HeadTracking.ini` are left as they are.
+config, so `CameraUnlock.ini` is left as it is.
 
 ## Uninstalling
 
 Run `uninstall.cmd`. This removes the mod files and leaves `CameraUnlock.ini`
-and `HeadTracking.ini` in place, so a reinstall keeps your settings. The ASI
+in place, so a reinstall keeps your settings. The ASI
 loader is only removed if the installer put it there; if you already had your
 own, it is left alone. Use `uninstall.cmd /force` to remove it anyway.
 
