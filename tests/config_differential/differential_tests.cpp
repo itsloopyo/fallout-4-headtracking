@@ -20,12 +20,18 @@
 // axis inversion the player set away from what the build shipped is dropped (pose_shaping);
 // the shipped InvertX=true is the x negation at the engine boundary now, which
 // camera_math_tests holds bit for bit. A hotkey code outside 0x01-0xFE imports as unbound
-// (N1). No default moved, so the no-file input has no difference either. The frozen reader
-// clamps every number it reads into a range the canonical rows hold and replaces a value that
-// is not finite, so no input is deferred and N2 never applies.
+// (N1), and so does a code on a Ctrl, Shift or Alt key alone (N3), the action keeping its
+// Ctrl+Shift chord. No default moved, so the no-file input has no difference either. The
+// frozen reader clamps every number it reads into a range the canonical rows hold and replaces
+// a value that is not finite, so no input is deferred and N2 never applies.
 //
-// Every owner reads and creates one scratch Defaults.ini, which it creates with the built-in
-// values, so an input whose values are the built-in ones migrates to `default` rows. The
+// The main runs read one scratch Defaults.ini, which the first owner creates with the built-in
+// values, so an input whose values are the built-in ones migrates to `default` rows. A row the
+// player never changed from the frozen default follows Defaults.ini: the import lists it in
+// follows_defaults_ini, the tracking mode pair as one unit, and the test holds that list to the
+// rows the frozen reader read at their defaults on every input. Every input also migrates over
+// a Defaults.ini that differs from the built-in values on every row, where each untouched row is
+// written `default` and takes that file's value and each changed row keeps the player's. The
 // distinct migrated files are written beside the executable under migrated\, for
 // lint-migrated.mjs to run core's canonical config lint over.
 //
@@ -374,14 +380,23 @@ const cfg::DroppedValue* FindDrop(const std::vector<cfg::DroppedValue>& dropped,
     return nullptr;
 }
 
-// A hotkey code outside 0x01-0xFE imports as unbound (N1), and only then is it dropped. Code 0
-// never fired on the published build's poller and imports as unbound, unrecorded.
+bool IsModifierCode(int vk) {
+    return (vk >= 0x10 && vk <= 0x12) || (vk >= 0xA0 && vk <= 0xA5);
+}
+
+// A hotkey code outside 0x01-0xFE imports as unbound (N1), and so does a code on a Ctrl, Shift or
+// Alt key alone (N3); only those are dropped. Code 0 never fired on the published build's poller
+// and imports as unbound, unrecorded.
 bool KeyKept(const std::string& name, int vk, const char* key, const std::vector<cfg::DroppedValue>& dropped) {
     const bool outOfRange = vk != 0 && (vk < 0x01 || vk > 0xFE);
     if (outOfRange != (FindDrop(dropped, cfg::DropRule::KeyCodeOutOfRange, "Hotkeys", key) != nullptr)) {
         Fail(name, std::string("[Hotkeys] ") + key + " dropped as out of range does not match its code");
     }
-    return vk != 0 && !outOfRange;
+    const bool modifier = IsModifierCode(vk);
+    if (modifier != (FindDrop(dropped, cfg::DropRule::ModifierKey, "Hotkeys", key) != nullptr)) {
+        Fail(name, std::string("[Hotkeys] ") + key + " dropped as a modifier key does not match its code");
+    }
+    return vk != 0 && !outOfRange && !modifier;
 }
 
 // Mod::Initialize and ConfigureSession as the published build and commit A ran them: [Position]
@@ -521,23 +536,128 @@ int CheckPoseShaping(const std::string& name, const legacy::Config& c, const cfg
 // Every drop the import recorded is by one of the approved rules this map applies.
 void CheckDropRules(const std::string& name, const cfg::ImportResult& result) {
     for (const cfg::DroppedValue& d : result.dropped) {
-        const bool approved = d.rule == cfg::DropRule::PoseShaping || d.rule == cfg::DropRule::KeyCodeOutOfRange;
+        const bool approved = d.rule == cfg::DropRule::PoseShaping || d.rule == cfg::DropRule::KeyCodeOutOfRange ||
+                              d.rule == cfg::DropRule::ModifierKey;
         if (!approved) Fail(name, "the import drops [" + d.section + "] " + d.key + " by a rule this map never applies");
     }
 }
 
+// ---------------------------------------------------------------------------
+// The rows that follow Defaults.ini
+// ---------------------------------------------------------------------------
+
+using Concept = cfg::schema::Concept;
+
+// Every row of the table that follows Defaults.ini: every global concept it binds, none of
+// them PerGame.
+const std::set<Concept>& AllRows() {
+    static const std::set<Concept> all = {
+        Concept::UdpPort,         Concept::EnableOnStartup,      Concept::WorldSpaceYaw,
+        Concept::RotationEnabled, Concept::PositionEnabled,      Concept::LocalSmoothing,
+        Concept::RemoteSmoothing, Concept::PositionLimitX,       Concept::PositionLimitY,
+        Concept::PositionLimitYDown, Concept::PositionLimitZ,    Concept::PositionLimitZBack,
+        Concept::ToggleKey,       Concept::CycleTrackingModeKey, Concept::YawModeKey,
+    };
+    return all;
+}
+
+// The rows the player never changed: every value the frozen reader gave the row is its
+// default. LimitY stood for both vertical bounds, [Position] Enabled for the tracking mode pair,
+// and the chord beside each hotkey code was fixed.
+std::set<Concept> UntouchedRows(const legacy::Config& c) {
+    const legacy::Config d;
+    std::set<Concept> rows;
+    const auto untouched = [&rows](bool same, std::initializer_list<Concept> ids) {
+        if (same) rows.insert(ids);
+    };
+    untouched(c.udpPort == d.udpPort, {Concept::UdpPort});
+    untouched(c.autoEnable == d.autoEnable, {Concept::EnableOnStartup});
+    untouched(c.worldSpaceYaw == d.worldSpaceYaw, {Concept::WorldSpaceYaw});
+    untouched(c.positionEnabled == d.positionEnabled, {Concept::RotationEnabled, Concept::PositionEnabled});
+    untouched(Bits(c.localSmoothing) == Bits(d.localSmoothing), {Concept::LocalSmoothing});
+    untouched(Bits(c.remoteSmoothing) == Bits(d.remoteSmoothing), {Concept::RemoteSmoothing});
+    untouched(Bits(c.positionLimitX) == Bits(d.positionLimitX), {Concept::PositionLimitX});
+    untouched(Bits(c.positionLimitY) == Bits(d.positionLimitY), {Concept::PositionLimitY, Concept::PositionLimitYDown});
+    untouched(Bits(c.positionLimitZ) == Bits(d.positionLimitZ), {Concept::PositionLimitZ});
+    untouched(Bits(c.positionLimitZBack) == Bits(d.positionLimitZBack), {Concept::PositionLimitZBack});
+    untouched(c.toggleKey == d.toggleKey, {Concept::ToggleKey});
+    untouched(c.positionToggleKey == d.positionToggleKey, {Concept::CycleTrackingModeKey});
+    untouched(c.yawModeKey == d.yawModeKey, {Concept::YawModeKey});
+    return rows;
+}
+
+std::string Names(const std::set<Concept>& rows) {
+    std::string text;
+    for (const Concept row : rows) {
+        text += (text.empty() ? "" : ", ") + std::string(cfg::schema::kConcepts[static_cast<size_t>(row)].name);
+    }
+    return text.empty() ? "none" : text;
+}
+
+// The start `imported` gives, with each row in `follows` as `defaults` has it.
+Startup OverDefaults(Startup imported, const std::set<Concept>& follows, const Startup& defaults) {
+    const auto take = [&follows](Concept row, auto& field, const auto& value) {
+        if (follows.count(row)) field = value;
+    };
+    take(Concept::UdpPort, imported.port, defaults.port);
+    take(Concept::EnableOnStartup, imported.enabled, defaults.enabled);
+    take(Concept::WorldSpaceYaw, imported.world_yaw, defaults.world_yaw);
+    if (follows.count(Concept::RotationEnabled) || follows.count(Concept::PositionEnabled)) imported.mode = defaults.mode;
+    take(Concept::LocalSmoothing, imported.local_smoothing, defaults.local_smoothing);
+    take(Concept::RemoteSmoothing, imported.remote_smoothing, defaults.remote_smoothing);
+    take(Concept::PositionLimitX, imported.limit_x, defaults.limit_x);
+    take(Concept::PositionLimitY, imported.limit_y, defaults.limit_y);
+    take(Concept::PositionLimitYDown, imported.limit_y_down, defaults.limit_y_down);
+    take(Concept::PositionLimitZ, imported.limit_z, defaults.limit_z);
+    take(Concept::PositionLimitZBack, imported.limit_z_back, defaults.limit_z_back);
+    const std::pair<Concept, Action> hotkeys[] = {
+        {Concept::ToggleKey, Action::Toggle},
+        {Concept::CycleTrackingModeKey, Action::CycleMode},
+        {Concept::YawModeKey, Action::YawMode},
+    };
+    for (const auto& [row, action] : hotkeys) {
+        if (!follows.count(row)) continue;
+        const Action a = action;
+        imported.hotkeys.erase(std::remove_if(imported.hotkeys.begin(), imported.hotkeys.end(),
+                                              [a](const Registration& r) { return r.action == a; }),
+                               imported.hotkeys.end());
+        for (const Registration& r : defaults.hotkeys) {
+            if (r.action == a) imported.hotkeys.push_back(r);
+        }
+    }
+    std::sort(imported.hotkeys.begin(), imported.hotkeys.end());
+    return imported;
+}
+
+// A Defaults.ini that differs from the built-in values on every row the table binds, the
+// tracking mode on both halves.
+const char kSkewedDefaults[] =
+    "[CameraUnlock]\r\nConfigFormat=1\r\n\r\n"
+    "[Network]\r\nUdpPort=5353\r\n\r\n"
+    "[General]\r\nEnableOnStartup=false\r\nWorldSpaceYaw=false\r\nRotationEnabled=false\r\n\r\n"
+    "[Smoothing]\r\nLocalSmoothing=0.5\r\nRemoteSmoothing=0.45\r\n\r\n"
+    "[Position]\r\nPositionEnabled=true\r\nPositionLimitX=0.55\r\nPositionLimitY=0.45\r\n"
+    "PositionLimitYDown=0.35\r\nPositionLimitZ=0.65\r\nPositionLimitZBack=0.25\r\n\r\n"
+    "[Hotkeys]\r\nToggleKey=F8\r\nCycleTrackingModeKey=F9\r\nYawModeKey=F10\r\n";
+
 struct MigrationTally {
     std::string committed;
     std::wstring defaults;
+    std::wstring skewed_defaults;
+    // What a session with no legacy file starts with over kSkewedDefaults.
+    Startup skewed;
     std::set<std::string> migrated;
     int created = 0;
     int converted = 0;
     int with_pose_shaping_dropped = 0;
     int with_n1 = 0;
+    int with_n3 = 0;
+    int with_row_changed = 0;
+    int with_mode_changed = 0;
 };
 
-cfg::ConfigOwnerOptions<Config> Options(const std::wstring& dir, const MigrationTally& tally) {
-    return Fallout4HT::MakeConfigOwnerOptions(dir + L"\\", cfg::DefaultsFile::At(tally.defaults));
+cfg::ConfigOwnerOptions<Config> Options(const std::wstring& dir, const std::wstring& defaults) {
+    return Fallout4HT::MakeConfigOwnerOptions(dir + L"\\", cfg::DefaultsFile::At(defaults));
 }
 
 FILETIME WriteTime(const std::wstring& path) {
@@ -566,17 +686,22 @@ struct Folders {
     std::wstring import;
     std::wstring migration;
     std::wstring read_only;
+    std::wstring skewed;
 };
 
 Folders NextFolders(const std::wstring& root) {
     static int n = 0;
     const std::wstring dir = MakeFolder(root, std::to_wstring(n++).c_str());
-    return {dir, MakeFolder(dir, L"oracle"), MakeFolder(dir, L"import"), MakeFolder(dir, L"migration"),
-            MakeFolder(dir, L"read-only")};
+    return {dir,
+            MakeFolder(dir, L"oracle"),
+            MakeFolder(dir, L"import"),
+            MakeFolder(dir, L"migration"),
+            MakeFolder(dir, L"read-only"),
+            MakeFolder(dir, L"skewed")};
 }
 
 void RemoveFolders(const Folders& f) {
-    for (const std::wstring& dir : {f.oracle, f.import, f.migration, f.read_only, f.root}) {
+    for (const std::wstring& dir : {f.oracle, f.import, f.migration, f.read_only, f.skewed, f.root}) {
         EmptyFolder(dir);
         if (!RemoveDirectoryW(dir.c_str())) throw std::runtime_error("cannot remove a test folder");
     }
@@ -593,7 +718,7 @@ struct Migration {
 };
 
 Migration Migrate(const std::string& name, const std::wstring& dir, const std::optional<std::string>& legacyBytes,
-                  bool readOnly, const MigrationTally& tally) {
+                  bool readOnly, const std::wstring& defaults) {
     const std::wstring legacyPath = dir + L"\\" + kIniName;
     const std::wstring path = dir + L"\\" + Fallout4HT::kConfigFileName;
     FILETIME before{};
@@ -605,7 +730,7 @@ Migration Migrate(const std::string& name, const std::wstring& dir, const std::o
 
     Migration m{};
     {
-        cfg::ConfigOwner<Config> owner(Options(dir, tally));
+        cfg::ConfigOwner<Config> owner(Options(dir, defaults));
         m.loaded = owner.Load();
     }
 
@@ -629,7 +754,7 @@ Migration Migrate(const std::string& name, const std::wstring& dir, const std::o
 void CheckSecondLoad(const std::string& name, const std::wstring& dir, const Migration& first,
                      const std::optional<std::string>& legacyBytes, const MigrationTally& tally) {
     const auto before = Snapshot(dir);
-    cfg::ConfigOwner<Config> owner(Options(dir, tally));
+    cfg::ConfigOwner<Config> owner(Options(dir, tally.defaults));
     const cfg::ConfigLoadResult<Config> again = owner.Load();
     if (again.status != cfg::ConfigLoadStatus::Canonical) Fail(name, "the second load is not Canonical");
     if (!again.diagnostics.empty()) Fail(name, "the migrated file draws diagnostics");
@@ -648,7 +773,7 @@ void CheckSecondLoad(const std::string& name, const std::wstring& dir, const Mig
 void MigrateInput(const Folders& f, const std::string& name, const std::optional<std::string>& bytes,
                   const ImportRun& i, const cfg::ImportResult* result, MigrationTally& tally) {
     using cfg::ConfigLoadStatus;
-    const Migration m = Migrate(name, f.migration, bytes, false, tally);
+    const Migration m = Migrate(name, f.migration, bytes, false, tally.defaults);
     CheckNoShaping(name, m.loaded.config);
 
     if (!bytes) {
@@ -668,9 +793,49 @@ void MigrateInput(const Folders& f, const std::string& name, const std::optional
                     [](const cfg::DroppedValue& d) { return d.rule == cfg::DropRule::KeyCodeOutOfRange; })) {
         ++tally.with_n1;
     }
+    if (std::any_of(result->dropped.begin(), result->dropped.end(),
+                    [](const cfg::DroppedValue& d) { return d.rule == cfg::DropRule::ModifierKey; })) {
+        ++tally.with_n3;
+    }
 
-    for (const std::string& d : StartupDifferences(FromImport(name, i.cfg, result->dropped), FromMigration(m.loaded.config))) {
+    const Startup imported = FromImport(name, i.cfg, result->dropped);
+    for (const std::string& d : StartupDifferences(imported, FromMigration(m.loaded.config))) {
         Fail(name, "comparison 2: " + d);
+    }
+
+    // A row the player never changed from the frozen default is left to Defaults.ini, the
+    // tracking mode pair as one unit, and every other row keeps the player's value.
+    const std::set<Concept> follows(result->follows_defaults_ini.begin(), result->follows_defaults_ini.end());
+    if (follows.size() != result->follows_defaults_ini.size()) Fail(name, "follows_defaults_ini names a row twice");
+    const std::set<Concept> untouched = UntouchedRows(i.cfg);
+    if (follows != untouched) {
+        Fail(name, "the import leaves " + Names(follows) + " to Defaults.ini, and the player never changed " +
+                       Names(untouched));
+    }
+    // Every file a build shipped or wrote, and the empty one, holds only the frozen defaults.
+    const bool unedited = name == "empty file" || name == "shipped, dev" || name == "first run, dev" ||
+                          name.rfind("committed, ", 0) == 0;
+    if (unedited && untouched != AllRows()) Fail(name, "a file a build wrote leaves only " + Names(untouched) + " to Defaults.ini");
+    if (untouched != AllRows()) ++tally.with_row_changed;
+    if (!untouched.count(Concept::RotationEnabled)) ++tally.with_mode_changed;
+
+    // Over a Defaults.ini that differs everywhere, the untouched rows are written `default` and
+    // take its values, and a changed row keeps the player's value (written `default` only where
+    // it is the one that file gives).
+    const Migration sk = Migrate(name, f.skewed, bytes, false, tally.skewed_defaults);
+    if (sk.loaded.status != ConfigLoadStatus::Migrated || !sk.bytes) {
+        Fail(name, "the migration over the skewed Defaults.ini is not Migrated");
+    } else {
+        for (const std::string& d :
+             StartupDifferences(OverDefaults(imported, follows, tally.skewed), FromMigration(sk.loaded.config))) {
+            Fail(name, "over the skewed Defaults.ini: " + d);
+        }
+        for (const Concept row : follows) {
+            const std::string key = cfg::schema::kConcepts[static_cast<size_t>(row)].key;
+            if (sk.bytes->find("\r\n" + key + "=default\r\n") == std::string::npos) {
+                Fail(name, "over the skewed Defaults.ini, " + key + " is not written default");
+            }
+        }
     }
 
     ++tally.converted;
@@ -680,7 +845,7 @@ void MigrateInput(const Folders& f, const std::string& name, const std::optional
     }
     tally.migrated.insert(*m.bytes);
 
-    const Migration ro = Migrate(name, f.read_only, bytes, true, tally);
+    const Migration ro = Migrate(name, f.read_only, bytes, true, tally.defaults);
     if (ro.loaded.status != ConfigLoadStatus::Migrated || ro.bytes != m.bytes) {
         Fail(name, "a read-only legacy file does not import as a writable one does");
     }
@@ -741,7 +906,7 @@ void TestUnopenableFile(const std::wstring& root, const std::string& shipped, co
         } else if (dir == f.import) {
             i.status = legacy::Read(Narrow(path).c_str(), i.cfg);
         } else {
-            cfg::ConfigOwner<Config> owner(Options(dir, tally));
+            cfg::ConfigOwner<Config> owner(Options(dir, tally.defaults));
             loaded.emplace(owner.Load());
             if (owner.Save([](Config& c) { c.world_space_yaw = false; }).status != cfg::ConfigSaveStatus::NotSaved) {
                 Fail(name, "a deferred session saved");
@@ -852,6 +1017,25 @@ int main(int argc, char** argv) {
         MigrationTally tally;
         tally.committed = ReadBytes(Widen(F4_COMMITTED_CONFIG));
         tally.defaults = MakeFolder(root, L"global") + L"\\Defaults.ini";
+        tally.skewed_defaults = MakeFolder(root, L"skewed-global") + L"\\Defaults.ini";
+        WriteBytes(tally.skewed_defaults, kSkewedDefaults);
+        {
+            const Folders f = NextFolders(root);
+            const Migration created =
+                Migrate("skewed Defaults.ini", f.migration, std::nullopt, false, tally.skewed_defaults);
+            if (created.loaded.status != cfg::ConfigLoadStatus::Created) {
+                Fail("skewed Defaults.ini", "no file is not Created");
+            }
+            tally.skewed = FromMigration(created.loaded.config);
+            const Startup builtin = FromMigration(Fallout4HT::MakeConfigTable().defaults());
+            for (const Concept row : AllRows()) {
+                if (StartupDifferences(builtin, OverDefaults(builtin, {row}, tally.skewed)).empty()) {
+                    Fail("skewed Defaults.ini", std::string(cfg::schema::kConcepts[static_cast<size_t>(row)].name) +
+                                                    " is the built-in value");
+                }
+            }
+            RemoveFolders(f);
+        }
 
         TestFrozenDefaults();
         TestRegistrationModel();
@@ -879,7 +1063,7 @@ int main(int argc, char** argv) {
         for (const auto& [name, bytes] : inputs) {
             if (!bytes || bytes->empty()) continue;
             const Folders f = NextFolders(root);
-            const Migration m = Migrate(name, f.migration, bytes, false, tally);
+            const Migration m = Migrate(name, f.migration, bytes, false, tally.defaults);
             if (m.bytes != tally.committed) {
                 Fail("fresh equals upgrade", name + " does not convert to the committed file");
             }
@@ -906,6 +1090,13 @@ int main(int argc, char** argv) {
         std::printf("  %d with a changed sensitivity or inversion dropped (pose_shaping)\n",
                     tally.with_pose_shaping_dropped);
         std::printf("  %d with a hotkey code outside 0x01-0xFE unbound (N1)\n", tally.with_n1);
+        std::printf("  %d with a hotkey on a Ctrl, Shift or Alt key alone unbound (N3)\n", tally.with_n3);
+        if (tally.with_n3 == 0) Fail("N3", "no input unbinds a modifier key");
+        std::printf("  %d with a row changed from the frozen default, %d of them the tracking mode\n",
+                    tally.with_row_changed, tally.with_mode_changed);
+        if (tally.with_row_changed == 0 || tally.with_mode_changed == 0) {
+            Fail("Defaults.ini", "no input changes a row, the tracking mode among them, from the frozen default");
+        }
         if (tally.with_pose_shaping_dropped == 0) Fail("pose shaping", "no input drops a changed value");
         if (tally.with_n1 == 0) Fail("N1", "no input unbinds an out-of-range code");
         if (tally.migrated.count(tally.committed) == 0) Fail("first run", "no input migrated to the committed file");
@@ -920,9 +1111,11 @@ int main(int argc, char** argv) {
             WriteBytes(lintDir + L"\\" + std::to_wstring(n++) + L".ini", file);
         }
 
-        const std::wstring global = root + L"\\global";
-        EmptyFolder(global);
-        RemoveDirectoryW(global.c_str());
+        for (const wchar_t* name : {L"\\global", L"\\skewed-global"}) {
+            const std::wstring global = root + name;
+            EmptyFolder(global);
+            RemoveDirectoryW(global.c_str());
+        }
         RemoveDirectoryW(root.c_str());
     } catch (const std::exception& e) {
         std::printf("FAIL: %s\n", e.what());
