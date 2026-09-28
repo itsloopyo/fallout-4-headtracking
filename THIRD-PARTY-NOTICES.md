@@ -18,7 +18,7 @@ Fallout 4.
 | CommonLibF4 | n/a | MIT | Not bundled; a reference for engine struct offsets |
 | CommonLibSSE-NG | n/a | MIT | Not bundled; cross-checked the same offsets |
 | AutoBeam | n/a | see upstream | Not bundled; corroborated one engine finding |
-| cameraunlock-core | eb91d94ad8a8cd7292ea8f4e35271fe8cd686195 | MIT | Compiled into `Fallout4HeadTracking.asi` |
+| cameraunlock-core | ac271752d8fcf37e793b70744aa8eb12588d91ea | MIT | Compiled into `Fallout4HeadTracking.asi` |
 | OpenTrack | n/a | ISC | Not bundled; UDP protocol interoperability only |
 
 ---
@@ -285,6 +285,13 @@ this section is attribution rather than a licence obligation being discharged.
 Both projects are MIT regardless, which would permit the use with attribution
 even if it were.
 
+The `bhkPickData` field layout, collision layer numbers and `TESObjectREFR`
+parent-cell offset were cross-checked against the MIT
+[alandtse/CommonLibF4](https://github.com/alandtse/CommonLibF4) fork and the GPL-3.0
+[libxse/commonlibf4](https://github.com/libxse/commonlibf4) declarations. These are
+binary interface facts only. No source from either fork is compiled or copied
+into the collision adapter.
+
 ---
 
 ## AutoBeam
@@ -301,7 +308,7 @@ from the same camera node we found, and the confirmation was worth having.
 Git submodule at `cameraunlock-core/`, compiled into `Fallout4HeadTracking.asi`. Our own code,
 MIT licensed, reproduced here so the notices are complete.
 
-- Pinned commit: `eb91d94ad8a8cd7292ea8f4e35271fe8cd686195`
+- Pinned commit: `ac271752d8fcf37e793b70744aa8eb12588d91ea`
 
 ```
 MIT License
