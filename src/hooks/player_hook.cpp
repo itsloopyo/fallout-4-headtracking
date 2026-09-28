@@ -4,6 +4,8 @@
 #include "player_hook.h"
 #include "camera_hook.h"
 #include "camera_math.h"
+#include "lean_trace.h"
+#include "ads_lean.h"
 #include "camera_snapshot.h"
 #include "hook_slot.h"
 #include "core/constants.h"
@@ -35,6 +37,7 @@ struct SavedCameraState {
     NiPoint3 rootWorldPosition;
     NiPoint3 niCamLocalPosition;
     NiPoint3 niCamWorldPosition;
+    NiPoint3 cameraOffset;
     bool restoreRoot;
     bool restoreNiCamLocal;
     bool valid;
@@ -45,6 +48,15 @@ float Length3(const NiPoint3& a, const NiPoint3& b) {
 }
 
 SavedCameraState g_heldState{};
+std::atomic<float> g_leanScale{1.0f};
+
+// The true free look shift on the first-person skeleton, and where the root
+// stood once it was applied. The engine rebuilds the skeleton every frame, so a
+// root anywhere else means the shift is already gone and there is nothing to
+// take off.
+uintptr_t g_weaponRig = 0;
+NiPoint3 g_weaponShift{};
+NiPoint3 g_weaponRootAfter{};
 CameraRootSnapshots g_heldSnapshot{};
 bool g_renderPoseHeld = false;
 OverrideReference g_heldReference{};
@@ -117,6 +129,27 @@ bool ApplyRenderPose(const CameraRootSnapshots& snap, const RenderPose& pose,
         saved.niCamLocalPosition = *LocalTranslationOf(snap.niCamera);
         saved.niCamWorldPosition = *WorldTranslationOf(snap.niCamera);
 
+        // What the camera adds to the clean eye. The rig's share of the lean is
+        // already IN the clean eye, because the camera update read it off the
+        // first-person skeleton, so the whole lean is clamped from the un-leaned
+        // eye and the camera makes up whatever the rig did not carry. When the
+        // clamp tightens, that is negative and the eye stops at the wall this
+        // frame; the rig follows it on the next.
+        NiPoint3 offset;
+        if (pose.hasPosition) {
+            const NiPoint3 desired = TrackerLeanToWorldUnits(saved.rootWorld,
+                pose.positionX + pose.rigX, pose.positionY + pose.rigY, pose.positionZ + pose.rigZ);
+            const NiPoint3 unleaned(saved.niCamWorldPosition.x - pose.rigWorld.x,
+                                    saved.niCamWorldPosition.y - pose.rigWorld.y,
+                                    saved.niCamWorldPosition.z - pose.rigWorld.z);
+            const float leanScale = lean_trace::Clamp(unleaned, desired, snap.niCamera,
+                pose.cameraState, *reinterpret_cast<const float*>(snap.niCamera + 0x170),
+                pose.tick, pose.deltaTime);
+            g_leanScale.store(leanScale, std::memory_order_relaxed);
+            offset = CameraShareOfLean(desired, pose.rigWorld, leanScale);
+        }
+        saved.cameraOffset = offset;
+
         const NiMatrix33 trackedRoot =
             pose.rotation.cameraFrame * saved.rootWorld * pose.rotation.worldFrame;
         const NiMatrix33 trackedNiCam = ComposeChildWorld(
@@ -133,8 +166,6 @@ bool ApplyRenderPose(const CameraRootSnapshots& snap, const RenderPose& pose,
         }
 
         if (pose.hasPosition) {
-            const NiPoint3 offset = TrackerLeanToWorldUnits(
-                saved.rootWorld, pose.positionX, pose.positionY, pose.positionZ);
             if (includeRoot) {
                 *LocalTranslationOf(snap.cameraRoot) = NiPoint3(
                     saved.rootLocalPosition.x + offset.x,
@@ -146,14 +177,13 @@ bool ApplyRenderPose(const CameraRootSnapshots& snap, const RenderPose& pose,
                     saved.rootWorldPosition.z + offset.z);
             } else {
                 // niCamera's local translation is expressed in cameraRoot's
-                // frame, so the lean goes in unrotated - but through the same
-                // axis mapping the world offset above uses. Spelling it out
-                // separately is how the two came to disagree about the sign of
-                // the forward axis, and since the engine rebuilds the world
-                // translation from this one, the disagreement was invisible in
-                // every dump and visible only on screen.
-                const NiPoint3 localLean = TrackerLeanToCameraLocalUnits(
-                    pose.positionX, pose.positionY, pose.positionZ);
+                // frame, and the engine rebuilds the world translation from it,
+                // so it is the world offset taken back into that frame rather
+                // than a second mapping from the tracker axes. When the two were
+                // spelled out separately they disagreed about the sign of the
+                // forward axis, invisible in every dump and visible only on
+                // screen.
+                const NiPoint3 localLean = saved.rootWorld.WorldToLocal(offset);
                 *LocalTranslationOf(snap.niCamera) = NiPoint3(
                     saved.niCamLocalPosition.x + localLean.x,
                     saved.niCamLocalPosition.y + localLean.y,
@@ -327,6 +357,23 @@ std::recursive_mutex& CameraMutationMutex() {
 
 void* PlayerActor() { return g_playerActor.load(std::memory_order_relaxed); }
 
+float LeanScale() { return g_leanScale.load(std::memory_order_relaxed); }
+
+NiPoint3 HeldCameraOffset() { return g_heldState.cameraOffset; }
+
+void NoteWeaponShift(uintptr_t rig, const NiPoint3& world) {
+    g_weaponRig = rig;
+    g_weaponShift = world;
+    g_weaponRootAfter = NiPoint3();
+    if (rig == 0) return;
+    static std::atomic<uint64_t> s_faults{0};
+    __try {
+        g_weaponRootAfter = *WorldTranslationOf(rig);
+    } __except (SehAbsorbAccessViolation(GetExceptionCode(), "weapon shift note", s_faults)) {
+        g_weaponRig = 0;
+    }
+}
+
 bool IsPlayerActor(void* actor) {
     return actor != nullptr && actor == g_playerActor.load(std::memory_order_relaxed);
 }
@@ -496,12 +543,35 @@ thread_local int t_aimScopeDepth = 0;
 thread_local NiMatrix33 t_aimSavedRotation{};
 thread_local NiPoint3 t_aimSavedPosition{};
 thread_local bool t_aimSwapped = false;
+thread_local bool t_weaponUnshifted = false;
+
+bool WeaponShiftStillOn() {
+    if (g_weaponRig == 0 || (g_weaponShift.x == 0.0f && g_weaponShift.y == 0.0f && g_weaponShift.z == 0.0f)) {
+        return false;
+    }
+    static std::atomic<uint64_t> s_faults{0};
+    __try {
+        const NiPoint3* root = WorldTranslationOf(g_weaponRig);
+        return root->x == g_weaponRootAfter.x && root->y == g_weaponRootAfter.y && root->z == g_weaponRootAfter.z;
+    } __except (SehAbsorbAccessViolation(GetExceptionCode(), "weapon shift check", s_faults)) {
+    }
+    return false;
+}
+
+void ClearWeaponShift() {
+    if (WeaponShiftStillOn()) {
+        AdsLean::ShiftWeapon(g_weaponRig, NiPoint3(-g_weaponShift.x, -g_weaponShift.y, -g_weaponShift.z));
+    }
+    NoteWeaponShift(0, NiPoint3());
+}
 
 void BeginAimCleanScope() {
     g_cameraMutationMutex.lock();
     ++t_cleanScopeDepth;
     if (t_aimScopeDepth++ != 0) return;      // already clean for an outer aim scope
     t_aimSwapped = false;
+    t_weaponUnshifted = WeaponShiftStillOn() &&
+        AdsLean::ShiftWeapon(g_weaponRig, NiPoint3(-g_weaponShift.x, -g_weaponShift.y, -g_weaponShift.z));
     if (!g_renderPoseHeld || !g_heldState.valid || g_heldSnapshot.niCamera == 0) return;
 
     static std::atomic<uint64_t> s_faults{0};
@@ -518,6 +588,12 @@ void BeginAimCleanScope() {
 }
 
 void EndAimCleanScope() {
+    if (t_aimScopeDepth == 1 && t_weaponUnshifted) {
+        // Re-noted rather than assumed: the float round trip need not land on
+        // the same bits, and the next shot compares them exactly.
+        if (AdsLean::ShiftWeapon(g_weaponRig, g_weaponShift)) NoteWeaponShift(g_weaponRig, g_weaponShift);
+        t_weaponUnshifted = false;
+    }
     if (--t_aimScopeDepth == 0 && t_aimSwapped) {
         static std::atomic<uint64_t> s_faults{0};
         __try {

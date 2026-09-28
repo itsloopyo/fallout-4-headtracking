@@ -20,15 +20,19 @@ constexpr const wchar_t* kLegacyConfigFileName = L"HeadTracking.ini";
 // The game's name as cameraunlock-core's data/games.json spells it.
 constexpr const char* kConfigDisplayName = "Fallout 4";
 
-// Core's config, at core's defaults, plus the two settings only this mod has.
 struct Config : cameraunlock::HeadTrackingConfig {
+    Config() {
+        collision_enabled = true;
+        collision_channel = 39;
+        lean_clamp.skin = 10.0f;
+    }
     bool show_notifications = true;
-    // The chord every earlier build registered for this, and nothing else.
-    std::string cycle_tracker_source_key_name = "Ctrl+Shift+U";
+    // Ctrl+Shift+U, the chord earlier builds used, is true free look's in every shooter.
+    std::string cycle_tracker_source_key_name = "Ctrl+Shift+J";
 };
 
-// The rows of CameraUnlock.ini. Only the tracking mode pair and WorldSpaceYaw are Writable:
-// the mode and yaw hotkeys save the player's choice, and End changes the session only.
+// The rows of CameraUnlock.ini. Only the tracking mode pair, WorldSpaceYaw and TrueFreeLook are
+// Writable: their hotkeys save the player's choice, and End changes the session only.
 cameraunlock::config::ConfigTable<Config> MakeConfigTable();
 
 // HeadTracking.ini as the builds before the canonical format read it (legacy_config/), mapped

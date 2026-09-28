@@ -151,7 +151,7 @@ std::wstring MakeFolder(const std::wstring& parent, const wchar_t* name) {
 // Hotkeys: what each build puts on its poller
 // ---------------------------------------------------------------------------
 
-enum class Action { Toggle, CycleMode, YawMode, TrackerSource };
+enum class Action { Toggle, CycleMode, YawMode, TrackerSource, TrueFreeLook };
 
 const char* ActionName(Action a) {
     switch (a) {
@@ -159,6 +159,7 @@ const char* ActionName(Action a) {
         case Action::CycleMode: return "cycle mode";
         case Action::YawMode: return "yaw mode";
         case Action::TrackerSource: return "tracker source";
+        case Action::TrueFreeLook: return "true free look";
     }
     throw std::logic_error("action");
 }
@@ -369,6 +370,11 @@ struct Startup {
     uint32_t limit_y_down = 0;
     uint32_t limit_z = 0;
     uint32_t limit_z_back = 0;
+    // Collision had no legacy setting; imports start with the new defaults.
+    bool collision_enabled = true;
+    uint32_t collision_release = Bits(0.9f);
+    // True free look had no legacy setting either.
+    bool true_free_look = false;
     std::vector<Registration> hotkeys;
 };
 
@@ -424,6 +430,15 @@ Startup FromImport(const std::string& name, const legacy::Config& c, const std::
                           (r.action == Action::CycleMode && cycleKept) || (r.action == Action::YawMode && yawKept);
         if (kept) s.hotkeys.push_back(r);
     }
+    // The one departure from the published start: Ctrl+Shift+U, which switched tracker source,
+    // is true free look's in every shooter, so the tracker source moves to J and true free look
+    // takes Insert and U.
+    for (Registration& r : s.hotkeys) {
+        if (r.action == Action::TrackerSource) r.vk = 'J';
+    }
+    s.hotkeys.push_back({Action::TrueFreeLook, VK_INSERT, kNav});
+    s.hotkeys.push_back({Action::TrueFreeLook, 'U', kChord});
+    std::sort(s.hotkeys.begin(), s.hotkeys.end());
     return s;
 }
 
@@ -442,11 +457,15 @@ Startup FromMigration(const Config& c) {
     s.limit_y_down = Bits(c.position.limit_y_down);
     s.limit_z = Bits(c.position.limit_z);
     s.limit_z_back = Bits(c.position.limit_z_back);
+    s.collision_enabled = c.collision_enabled;
+    s.collision_release = Bits(c.lean_clamp.release_smoothing);
+    s.true_free_look = c.true_free_look;
     const std::pair<Action, const std::string*> lists[] = {
         {Action::Toggle, &c.toggle_key_name},
         {Action::CycleMode, &c.cycle_tracking_mode_key_name},
         {Action::YawMode, &c.yaw_mode_key_name},
         {Action::TrackerSource, &c.cycle_tracker_source_key_name},
+        {Action::TrueFreeLook, &c.true_free_look_key_name},
     };
     for (const auto& [action, list] : lists) {
         const cameraunlock::input::KeyBindingsParseResult parsed = cameraunlock::input::ParseKeyBindings(*list);
@@ -475,6 +494,9 @@ std::vector<std::string> StartupDifferences(const Startup& a, const Startup& b) 
     SAME(limit_y_down);
     SAME(limit_z);
     SAME(limit_z_back);
+    SAME(collision_enabled);
+    SAME(collision_release);
+    SAME(true_free_look);
 #undef SAME
     if (a.hotkeys != b.hotkeys) out.push_back("hotkeys " + Describe(a.hotkeys) + " against " + Describe(b.hotkeys));
     return out;
@@ -557,6 +579,8 @@ const std::set<Concept>& AllRows() {
         Concept::RemoteSmoothing, Concept::PositionLimitX,       Concept::PositionLimitY,
         Concept::PositionLimitYDown, Concept::PositionLimitZ,    Concept::PositionLimitZBack,
         Concept::ToggleKey,       Concept::CycleTrackingModeKey, Concept::YawModeKey,
+        Concept::CollisionEnabled, Concept::CollisionReleaseSmoothing,
+        Concept::TrueFreeLook,    Concept::TrueFreeLookKey,
     };
     return all;
 }
@@ -566,7 +590,8 @@ const std::set<Concept>& AllRows() {
 // and the chord beside each hotkey code was fixed.
 std::set<Concept> UntouchedRows(const legacy::Config& c) {
     const legacy::Config d;
-    std::set<Concept> rows;
+    std::set<Concept> rows{Concept::CollisionEnabled, Concept::CollisionReleaseSmoothing, Concept::TrueFreeLook,
+                           Concept::TrueFreeLookKey};
     const auto untouched = [&rows](bool same, std::initializer_list<Concept> ids) {
         if (same) rows.insert(ids);
     };
@@ -610,10 +635,14 @@ Startup OverDefaults(Startup imported, const std::set<Concept>& follows, const S
     take(Concept::PositionLimitYDown, imported.limit_y_down, defaults.limit_y_down);
     take(Concept::PositionLimitZ, imported.limit_z, defaults.limit_z);
     take(Concept::PositionLimitZBack, imported.limit_z_back, defaults.limit_z_back);
+    take(Concept::CollisionEnabled, imported.collision_enabled, defaults.collision_enabled);
+    take(Concept::CollisionReleaseSmoothing, imported.collision_release, defaults.collision_release);
+    take(Concept::TrueFreeLook, imported.true_free_look, defaults.true_free_look);
     const std::pair<Concept, Action> hotkeys[] = {
         {Concept::ToggleKey, Action::Toggle},
         {Concept::CycleTrackingModeKey, Action::CycleMode},
         {Concept::YawModeKey, Action::YawMode},
+        {Concept::TrueFreeLookKey, Action::TrueFreeLook},
     };
     for (const auto& [row, action] : hotkeys) {
         if (!follows.count(row)) continue;
@@ -637,8 +666,9 @@ const char kSkewedDefaults[] =
     "[General]\r\nEnableOnStartup=false\r\nWorldSpaceYaw=false\r\nRotationEnabled=false\r\n\r\n"
     "[Smoothing]\r\nLocalSmoothing=0.5\r\nRemoteSmoothing=0.45\r\n\r\n"
     "[Position]\r\nPositionEnabled=true\r\nPositionLimitX=0.55\r\nPositionLimitY=0.45\r\n"
-    "PositionLimitYDown=0.35\r\nPositionLimitZ=0.65\r\nPositionLimitZBack=0.25\r\n\r\n"
-    "[Hotkeys]\r\nToggleKey=F8\r\nCycleTrackingModeKey=F9\r\nYawModeKey=F10\r\n";
+    "PositionLimitYDown=0.35\r\nPositionLimitZ=0.65\r\nPositionLimitZBack=0.25\r\n"
+    "CollisionEnabled=false\r\nCollisionReleaseSmoothing=0.4\r\nTrueFreeLook=true\r\n\r\n"
+    "[Hotkeys]\r\nToggleKey=F8\r\nCycleTrackingModeKey=F9\r\nYawModeKey=F10\r\nTrueFreeLookKey=F11\r\n";
 
 struct MigrationTally {
     std::string committed;

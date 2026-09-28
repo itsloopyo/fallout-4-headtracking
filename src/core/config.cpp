@@ -102,6 +102,10 @@ cfg::ImportResult Import(const cfg::LegacyInput& input, Config& out) {
     follows.Setting(C::ToggleKey, c.toggleKey, shipped.toggleKey);
     follows.Setting(C::CycleTrackingModeKey, c.positionToggleKey, shipped.positionToggleKey);
     follows.Setting(C::YawModeKey, c.yawModeKey, shipped.yawModeKey);
+    follows.NotInLegacy(C::CollisionEnabled);
+    follows.NotInLegacy(C::CollisionReleaseSmoothing);
+    follows.NotInLegacy(C::TrueFreeLook);
+    follows.NotInLegacy(C::TrueFreeLookKey);
 
     return status == legacy::ReadStatus::Absent
                ? cfg::ImportResult::Absent(std::move(dropped), std::move(shaping), follows.Concepts())
@@ -115,10 +119,14 @@ cfg::ConfigTable<Config> MakeConfigTable() {
     cfg::ConfigTable<Config> table = cfg::HeadTrackingConfigTable<Config>(
         {C::UdpPort, C::EnableOnStartup, C::WorldSpaceYaw, C::RotationEnabled, C::LocalSmoothing,
          C::RemoteSmoothing, C::PositionEnabled, C::PositionLimitX, C::PositionLimitY, C::PositionLimitYDown,
-         C::PositionLimitZ, C::PositionLimitZBack, C::ToggleKey, C::CycleTrackingModeKey, C::YawModeKey});
+         C::PositionLimitZ, C::PositionLimitZBack, C::CollisionEnabled, C::CollisionMargin,
+         C::CollisionChannel, C::CollisionReleaseSmoothing,
+         C::TrueFreeLook, C::ToggleKey, C::CycleTrackingModeKey, C::YawModeKey, C::TrueFreeLookKey});
+    table.Select(C::CollisionChannel).Engine();
     table.Select(C::WorldSpaceYaw).Writable()
         .Select(C::RotationEnabled).Writable()
-        .Select(C::PositionEnabled).Writable();
+        .Select(C::PositionEnabled).Writable()
+        .Select(C::TrueFreeLook).Writable();
     table.Local("General", "ShowNotifications", &Config::show_notifications, cfg::BoolCodec(),
                 "true: write the mod's notices (tracking on or off, a mode change) to HeadTracking.log.");
     table.Local("Hotkeys", "CycleTrackerSourceKey", &Config::cycle_tracker_source_key_name, cfg::HotkeyCodec(),

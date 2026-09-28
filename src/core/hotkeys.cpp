@@ -21,7 +21,7 @@
 #include <stdexcept>
 #include <string>
 
-// The diagnostic chords and Insert below are reverse-engineering instruments,
+// The diagnostic chords below are reverse-engineering instruments,
 // not controls a player needs. Configure with -DFALLOUT4_DEV_HOTKEYS=ON to
 // re-arm them.
 #ifndef FALLOUT4_DEV_HOTKEYS
@@ -59,6 +59,8 @@ bool Hotkeys::Start(const Config& cfg) {
     Register(m_poller, cfg.cycle_tracking_mode_key_name, "CycleTrackingModeKey",
              [] { Mod::Instance().CycleDofMode(); });
     Register(m_poller, cfg.yaw_mode_key_name, "YawModeKey", [] { Mod::Instance().ToggleYawMode(); });
+    Register(m_poller, cfg.true_free_look_key_name, "TrueFreeLookKey",
+             [] { Mod::Instance().ToggleTrueFreeLook(); });
     // Needed because which tracker app wins the source lock is a race decided in
     // milliseconds at startup, so a player running more than one (OpenTrack plus
     // a vendor tool) can end up on the wrong one with no way to say so from
@@ -75,7 +77,7 @@ bool Hotkeys::Start(const Config& cfg) {
     // silently wrecked several days of measurements before anyone noticed.
     // Ctrl+Shift+<letter> is the one modifier combination no game binds.
     m_poller.AddHotkey('D', ChordGuarded([] { DumpPoseTrace(); }));
-    m_poller.AddHotkey('J', ChordGuarded([] { Mod::Instance().ToggleExtrapolation(); }));
+    m_poller.AddHotkey('L', ChordGuarded([] { Mod::Instance().ToggleExtrapolation(); }));
     m_poller.AddHotkey('I', ChordGuarded([] { Mod::Instance().CycleAxisIsolation(); }));
     m_poller.AddHotkey('K', ChordGuarded([] { AbSwitches::ToggleCrosshairMove(); }));
     m_poller.AddHotkey('B', ChordGuarded([] { DumpFrameVerdictTrace(); }));
@@ -110,8 +112,7 @@ bool Hotkeys::Start(const Config& cfg) {
         ArmWriteWatch(reinterpret_cast<uintptr_t>(LocalRotationOf(snap.cameraRoot)), 8);
     }));
 
-    // Insert is unbound in Fallout 4, so it stays as-is.
-    m_poller.AddHotkey(VK_INSERT, [] { DumpCameraMatrices(); ArmRenderAudit(); });
+    m_poller.AddHotkey('P', ChordGuarded([] { DumpCameraMatrices(); ArmRenderAudit(); }));
 #endif
 
     if (!m_poller.Start()) {
@@ -119,13 +120,15 @@ bool Hotkeys::Start(const Config& cfg) {
         return false;
     }
 
-    Log::Line("Hotkeys ready: toggle=[%s] cycle tracking mode=[%s] yaw mode=[%s] next tracker source=[%s]",
+    Log::Line("Hotkeys ready: toggle=[%s] cycle tracking mode=[%s] yaw mode=[%s] true free look=[%s]"
+              " next tracker source=[%s]",
               cfg.toggle_key_name.c_str(), cfg.cycle_tracking_mode_key_name.c_str(),
-              cfg.yaw_mode_key_name.c_str(), cfg.cycle_tracker_source_key_name.c_str());
+              cfg.yaw_mode_key_name.c_str(), cfg.true_free_look_key_name.c_str(),
+              cfg.cycle_tracker_source_key_name.c_str());
 #if FALLOUT4_DEV_HOTKEYS
-    Log::Line("Diagnostics: Ctrl+Shift+D pose trace, J extrapolation, "
+    Log::Line("Diagnostics: Ctrl+Shift+D pose trace, L extrapolation, "
               "I axis isolation, K crosshair A/B, B verdict trace, V/X VATS probes, "
-              "N clean-scope A/B, M stage ruler, W/O write watches, Insert matrix dump");
+              "N clean-scope A/B, M stage ruler, W/O write watches, P matrix dump");
 #endif
 
     m_started = true;

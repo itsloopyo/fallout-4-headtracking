@@ -8,10 +8,20 @@ namespace Fallout4HT {
 
 struct RenderPose {
     HeadRotation rotation;
+    // The camera's share of the lean, in tracker metres.
     float positionX;
     float positionY;
     float positionZ;
+    // The rig's share, in tracker metres, and what the rig was actually moved
+    // by in world units before the camera update read it.
+    float rigX;
+    float rigY;
+    float rigZ;
+    NiPoint3 rigWorld;
     bool hasPosition;
+    uint64_t tick;
+    float deltaTime;
+    uintptr_t cameraState;
 };
 
 // Returns the pose published before the current PlayerCamera update. Every

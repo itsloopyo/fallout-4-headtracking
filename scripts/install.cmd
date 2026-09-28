@@ -24,7 +24,7 @@ set "ASI_LOADER_NAME=dxgi.dll"
 :: whatever the user tuned. Listing an .ini in MOD_DLLS instead puts it through
 :: the unconditional copy and resets every key on every update.
 set "MOD_SEED_FILES="
-set "MOD_CONTROLS=Controls (nav-cluster or Ctrl+Shift+letter chord):&echo   End  / Ctrl+Shift+Y - Toggle tracking&echo   PgUp / Ctrl+Shift+G - Cycle tracking mode&echo   PgDn / Ctrl+Shift+H - Toggle world/local yaw&echo          Ctrl+Shift+U - Next tracker source"
+set "MOD_CONTROLS=Controls (nav-cluster or Ctrl+Shift+letter chord):&echo   End  / Ctrl+Shift+Y - Toggle tracking&echo   PgUp / Ctrl+Shift+G - Cycle tracking mode&echo   PgDn / Ctrl+Shift+H - Toggle world/local yaw&echo   Ins  / Ctrl+Shift+U - Toggle true free look&echo          Ctrl+Shift+J - Next tracker source"
 :: Not used by this mod. Set blank so a value another mod's wrapper left in
 :: the same console does not reach the body.
 set "ASI_SUBDIR="

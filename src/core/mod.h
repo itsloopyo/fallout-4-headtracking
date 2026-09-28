@@ -27,6 +27,7 @@ enum class AxisIsolation {
 class Mod {
 public:
     static Mod& Instance();
+    const Config& Settings() const { return m_config; }
 
     bool Initialize();
     void Shutdown();
@@ -37,6 +38,11 @@ public:
 
     void CycleDofMode();
     void ToggleYawMode();
+
+    // Sights locked (false) or true free look (true): what a lean does to the eye
+    // and the weapon while the sights are up. Saved to CameraUnlock.ini on each press.
+    void ToggleTrueFreeLook();
+    bool IsTrueFreeLook() const { return m_trueFreeLook.load(); }
 
     // Step to a different tracker app when more than one is sending to the port.
     void CycleTrackerSource();
@@ -146,6 +152,8 @@ private:
 
     // Yaw mode: true = horizon-locked (world), false = camera-local
     std::atomic<bool> m_worldSpaceYaw{true};
+
+    std::atomic<bool> m_trueFreeLook{false};
 
     std::atomic<AxisIsolation> m_axisIsolation{AxisIsolation::None};
 

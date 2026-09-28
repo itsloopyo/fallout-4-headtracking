@@ -4,6 +4,9 @@
 
 #include "game/fallout4_types.h"
 
+#include <cameraunlock/ads/lean_handover.h>
+#include <cameraunlock/math/vec3.h>
+
 namespace Fallout4HT {
 
 // Pure head-tracking maths, free of engine pointers and Windows APIs so it can
@@ -64,22 +67,45 @@ NiMatrix33 SolveChildLocal(const NiMatrix33& desiredChildWorld,
                            const NiMatrix33& observedChildWorld,
                            const NiMatrix33& observedParentWorld);
 
-// The lean in cameraRoot's own frame, in engine units: X right, Y forward,
-// Z up, which is the order cameraRoot's rows are in and therefore the frame a
-// CHILD node's local translation is expressed in.
-//
-// The mod writes the lean in two places - niCamera's world translation and its
-// local translation - and the engine recomputes the world one from the local one
-// within the frame, so the local write is what actually reaches the screen. They
-// must derive the axis mapping from here rather than each spelling it out: when
-// they disagreed, the world write looked right in every dump while the camera
-// leaned the opposite way on screen.
-NiPoint3 TrackerLeanToCameraLocalUnits(float metersX, float metersY, float metersZ);
-
-// The same lean rotated into world space. Rows are the axes, so a camera-frame
-// vector is recombined FROM the rows rather than multiplied through them.
+// A tracker lean, in metres, as a world-space offset in engine units. Rows are the
+// axes, so a camera-frame vector is recombined FROM the rows rather than
+// multiplied through them. A child node's local translation takes this back into
+// cameraRoot's frame with WorldToLocal, so the two can never disagree about an
+// axis.
 NiPoint3 TrackerLeanToWorldUnits(const NiMatrix33& rootWorldRot,
                                  float metersX, float metersY, float metersZ);
+
+// The clean camera's forward axis in tracker axes, the frame the lean is split in:
+// a negative z lean moves the eye forward.
+inline const cameraunlock::math::Vec3 kTrackerForward(0.0f, 0.0f, -1.0f);
+
+// The lean's split between the camera and the first-person skeleton for this frame.
+// Sights locked is a first-person mode: outside the first-person camera the camera
+// carries the whole lean, sights up or not, and the handover starts again at the hip
+// when the view comes back to first person.
+cameraunlock::ads::LeanShares ShareLean(cameraunlock::ads::LeanHandover& handover, const cameraunlock::math::Vec3& lean,
+                                        bool firstPerson, bool aiming, bool trueFreeLook, bool rigAvailable,
+                                        unsigned long long nowMs);
+
+// What the camera adds to a clean eye that already carries `rigWorld`, the rig's
+// share of the lean, so the eye lands on the un-leaned eye plus `scale` of the
+// whole lean however it is split between the two carriers. Negative where the
+// collision clamp has tightened below what the rig carried.
+NiPoint3 CameraShareOfLean(const NiPoint3& wholeLean, const NiPoint3& rigWorld, float scale);
+
+// The last offset written to the first-person skeleton root, and the root's local
+// translation right after the write.
+struct RigWrite {
+    uintptr_t rig = 0;
+    NiPoint3 applied;
+    NiPoint3 localAfter;
+};
+
+// What to add to the root so it carries `rigWorld` this tick. The engine rewrites
+// the root from the player once a frame, but the camera can tick more than once in
+// a frame, and a tick that finds the root still holding the last write replaces
+// that write rather than adding to it.
+NiPoint3 RigDelta(const RigWrite& last, uintptr_t rig, const NiPoint3& local, const NiPoint3& rigWorld);
 
 // Where the body's aim direction lands in the head-tracked view.
 struct AimProjection {

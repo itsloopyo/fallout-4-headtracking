@@ -31,6 +31,8 @@ add_subdirectory(cameraunlock-core/cpp ${CMAKE_BINARY_DIR}/cameraunlock-core)
 set(MOD_SOURCES
     src/pch.cpp
     src/dllmain.cpp
+    src/lean_trace.cpp
+    src/hooks/ads_lean.cpp
     src/core/mod.cpp
     src/core/config.cpp
     src/legacy_config/legacy_config.cpp
@@ -188,10 +190,16 @@ if(FALLOUT4_BUILD_TESTS)
     fallout4_add_test(fallout4_fov_tests
         tests/fov_tests.cpp
     )
+    fallout4_add_test(fallout4_collision_tests tests/collision_tests.cpp)
 
     fallout4_add_test(fallout4_camera_math_tests
         tests/camera_math_tests.cpp
         src/hooks/camera_math.cpp
         src/hooks/crosshair_layout.cpp
+    )
+
+    fallout4_add_test(fallout4_ads_lean_tests
+        tests/ads_lean_tests.cpp
+        src/hooks/camera_math.cpp
     )
 endif()

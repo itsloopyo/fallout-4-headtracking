@@ -84,8 +84,16 @@ NiMatrix33 SolveChildLocal(const NiMatrix33& desiredChildWorld,
 
 namespace {
 
-// The tracker's axes mapped onto cameraRoot's, still in metres. The single
-// definition both lean paths derive from.
+// The tracker's axes mapped onto cameraRoot's, still in metres.
+//
+// The core's z runs the other way from the engine's forward axis: NEGATIVE z is
+// the lean toward the screen, and cameraRoot's row 1 points forward. The
+// negation belongs here, at the one place the two conventions meet. It used to
+// be done with InvertZ=true in the INI instead, and that is a different thing
+// wearing the same clothes: inversion is applied BEFORE the clamp, so it swapped
+// the limits over as well as the sign. Measured on this build with InvertZ=true:
+// a 25 cm lean IN came out as +0.10 m, pinned against the 0.10 m backward limit,
+// while a 25 cm lean BACK came out as the full -0.25 m.
 //
 // x is negated here because the tracker's x runs the other way from cameraRoot's
 // right axis. Every build before the canonical config did the same through
@@ -98,23 +106,6 @@ NiPoint3 TrackerAxesToCameraFrame(float metersX, float metersY, float metersZ) {
 
 }  // namespace
 
-NiPoint3 TrackerLeanToCameraLocalUnits(float metersX, float metersY, float metersZ) {
-    // The core's z runs the other way from the engine's forward axis: NEGATIVE z
-    // is the lean toward the screen, and cameraRoot's row 1 points forward. The
-    // negation belongs here, at the one place the two conventions meet.
-    //
-    // It used to be done with InvertZ=true in the INI instead, and that is a
-    // different thing wearing the same clothes: inversion is applied BEFORE the
-    // clamp, so it swapped the limits over as well as the sign. Measured on this
-    // build with InvertZ=true: a 25 cm lean IN came out as +0.10 m, pinned
-    // against the 0.10 m backward limit, while a 25 cm lean BACK came out as the
-    // full -0.25 m. Leaning in barely moved and pulling back moved a lot, which
-    // is exactly the shape the doctrine warns this mistake takes.
-    const NiPoint3 meters = TrackerAxesToCameraFrame(metersX, metersY, metersZ);
-    return NiPoint3(meters.x * kUnitsPerMeter, meters.y * kUnitsPerMeter,
-                    meters.z * kUnitsPerMeter);
-}
-
 NiPoint3 TrackerLeanToWorldUnits(const NiMatrix33& rootWorldRot,
                                  float metersX, float metersY, float metersZ) {
     // Scaled after the rotation, not before: the two orders differ in the last
@@ -126,6 +117,28 @@ NiPoint3 TrackerLeanToWorldUnits(const NiMatrix33& rootWorldRot,
     world.y *= kUnitsPerMeter;
     world.z *= kUnitsPerMeter;
     return world;
+}
+
+NiPoint3 CameraShareOfLean(const NiPoint3& wholeLean, const NiPoint3& rigWorld, float scale) {
+    return NiPoint3(wholeLean.x * scale - rigWorld.x, wholeLean.y * scale - rigWorld.y,
+                    wholeLean.z * scale - rigWorld.z);
+}
+
+cameraunlock::ads::LeanShares ShareLean(cameraunlock::ads::LeanHandover& handover, const cameraunlock::math::Vec3& lean,
+                                        bool firstPerson, bool aiming, bool trueFreeLook, bool rigAvailable,
+                                        unsigned long long nowMs) {
+    if (!firstPerson) {
+        handover.Stop();
+        return cameraunlock::ads::LeanShares{lean, cameraunlock::math::Vec3()};
+    }
+    return handover.Update(lean, kTrackerForward, aiming, trueFreeLook, rigAvailable, nowMs);
+}
+
+NiPoint3 RigDelta(const RigWrite& last, uintptr_t rig, const NiPoint3& local, const NiPoint3& rigWorld) {
+    const bool stillOurs = rig == last.rig && local.x == last.localAfter.x && local.y == last.localAfter.y &&
+                           local.z == last.localAfter.z;
+    if (!stillOurs) return rigWorld;
+    return NiPoint3(rigWorld.x - last.applied.x, rigWorld.y - last.applied.y, rigWorld.z - last.applied.z);
 }
 
 AimProjection ProjectBodyAimToNdc(const float (&cleanNiCamWorld)[3][4],

@@ -161,7 +161,8 @@ included, and any of them can be changed or removed.
 | Toggle tracking        | `End`       | `Ctrl+Shift+Y`  |
 | Cycle tracking mode    | `Page Up`   | `Ctrl+Shift+G`  |
 | Toggle yaw mode        | `Page Down` | `Ctrl+Shift+H`  |
-| Next tracker source    | -           | `Ctrl+Shift+U`  |
+| Toggle true free look  | `Insert`    | `Ctrl+Shift+U`  |
+| Next tracker source    | -           | `Ctrl+Shift+J`  |
 
 `Page Up` / `Ctrl+Shift+G` cycles tracking mode:
 
@@ -170,10 +171,30 @@ included, and any of them can be changed or removed.
 3. Rotational tracking disabled, positional tracking enabled
 4. Back to normal
 
-The tracking mode and the yaw mode are saved to `CameraUnlock.ini` the moment you
-change them, so the next launch starts with the same choice. Toggling tracking on
-or off with `End` lasts for the session only: each launch starts with tracking on
-or off as `EnableOnStartup` says.
+The tracking mode, the yaw mode and true free look are saved to `CameraUnlock.ini`
+the moment you change them, so the next launch starts with the same choice.
+Toggling tracking on or off with `End` lasts for the session only: each launch
+starts with tracking on or off as `EnableOnStartup` says.
+
+### Aiming down sights
+
+Head tracking stays on while you aim. The weapon stays where your mouse or
+controller points it, so with your head turned it sits off to one side with its
+sights still lined up, and your rounds land where those sights point. Head
+movement is scaled to the zoom, so a scope does not magnify it.
+
+By default leaning never takes your eye off the sights. `Insert` /
+`Ctrl+Shift+U` switches to **true free look**: the weapon stays put and your
+head moves freely around it, so to see down the sights you have to put your head
+behind them, as you would in VR. It is hard, and it is off by default. The mod
+saves the mode you pick, so it holds the next time you start the game.
+
+Leaning carries on through the aim. As the sights come up, your arms and weapon
+move with your head when you lean to the side or up and down, so the sights stay
+in front of your eye, and your rounds leave from where your eye is. Lean round a
+corner with the sights up and you can hit what you can see from there. Leaning
+toward or away from the sights moves only the view. In third person the view
+keeps the whole lean while you aim.
 
 ## Configuration
 
@@ -195,14 +216,18 @@ The built-in value of each setting set to `default` below:
 - `LocalSmoothing=0.0`
 - `RemoteSmoothing=0.15`
 - `PositionEnabled=true`
+- `TrueFreeLook=false`
 - `PositionLimitX=0.3`
 - `PositionLimitY=0.2`
 - `PositionLimitYDown=0.2`
 - `PositionLimitZ=0.4`
 - `PositionLimitZBack=0.1`
+- `CollisionEnabled=true`
+- `CollisionReleaseSmoothing=0.9`
 - `ToggleKey=End, Ctrl+Shift+Y`
 - `CycleTrackingModeKey=PageUp, Ctrl+Shift+G`
 - `YawModeKey=PageDown, Ctrl+Shift+H`
+- `TrueFreeLookKey=Insert, Ctrl+Shift+U`
 
 With every setting at its default, the file reads:
 
@@ -247,6 +272,9 @@ RemoteSmoothing=default
 ; true: moving your head moves the view.
 ; Tracking mode at startup, with RotationEnabled. The mode hotkey changes both.
 PositionEnabled=default
+; false: while you aim down the sights, leaning keeps your eye on the sights.
+; true: the weapon stays put and your head moves freely around it (true free look).
+TrueFreeLook=default
 ; How far, in metres, leaning left or right can move the view.
 PositionLimitX=default
 ; How far, in metres, raising your head can move the view.
@@ -257,6 +285,15 @@ PositionLimitYDown=default
 PositionLimitZ=default
 ; How far, in metres, leaning back can move the view.
 PositionLimitZBack=default
+; true: leaning stops at walls instead of moving the view through them.
+CollisionEnabled=default
+; How far the view is held off a wall when you lean into it, in the game's own units.
+CollisionMargin=10.0
+; Which of the game's collision channels the wall check tests against.
+; CollisionChannel=39
+; How gently the view eases back out after a wall stopped a lean.
+; 0 is the quickest, 1 the slowest.
+CollisionReleaseSmoothing=default
 
 [Hotkeys]
 ; Turns head tracking on and off.
@@ -265,8 +302,10 @@ ToggleKey=default
 CycleTrackingModeKey=default
 ; Switches yaw between the world's up axis and the camera's own (WorldSpaceYaw).
 YawModeKey=default
+; Switches between keeping your eye on the sights and true free look (TrueFreeLook).
+TrueFreeLookKey=default
 ; Switches to the next tracker app when more than one sends to the UDP port.
-CycleTrackerSourceKey=Ctrl+Shift+U
+CycleTrackerSourceKey=Ctrl+Shift+J
 ```
 <!-- /cameraunlock:config -->
 

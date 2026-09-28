@@ -207,6 +207,9 @@ void Mod::ConfigureSession() {
     m_worldSpaceYaw.store(m_config.world_space_yaw);
     Log::Line("Yaw mode: %s", m_worldSpaceYaw.load() ? "horizon-locked (world)" : "camera-local");
 
+    m_trueFreeLook.store(m_config.true_free_look);
+    Log::Line("Aim mode: %s", m_trueFreeLook.load() ? "true free look" : "sights locked");
+
     // The table reads a pair that names no mode as its defaults, so every
     // loaded pair decodes.
     m_session.SetMode(cameraunlock::DecodeTrackingMode(m_config.rotation_enabled, m_config.position_enabled).value());
@@ -363,6 +366,16 @@ void Mod::ToggleYawMode() {
     Notify(newValue ? "Yaw Mode: Horizon-locked" : "Yaw Mode: Camera-local");
 
     SaveConfig([newValue](Config& c) { c.world_space_yaw = newValue; });
+}
+
+void Mod::ToggleTrueFreeLook() {
+    const bool newValue = !m_trueFreeLook.load();
+    m_trueFreeLook.store(newValue);
+
+    Log::Line("Aim mode: %s", newValue ? "true free look" : "sights locked");
+    Notify(newValue ? "True free look: ON" : "True free look: OFF (sights locked)");
+
+    SaveConfig([newValue](Config& c) { c.true_free_look = newValue; });
 }
 
 void Mod::CycleTrackerSource() {

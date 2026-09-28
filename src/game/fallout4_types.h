@@ -105,6 +105,15 @@ struct NiMatrix33 {
             entry[0][2] * v.x + entry[1][2] * v.y + entry[2][2] * v.z
         );
     }
+
+    // The inverse of LocalToWorld: a world vector's components along the rows.
+    NiPoint3 WorldToLocal(const NiPoint3& v) const {
+        return NiPoint3(
+            entry[0][0] * v.x + entry[0][1] * v.y + entry[0][2] * v.z,
+            entry[1][0] * v.x + entry[1][1] * v.y + entry[1][2] * v.z,
+            entry[2][0] * v.x + entry[2][1] * v.y + entry[2][2] * v.z
+        );
+    }
 };
 static_assert(sizeof(NiMatrix33) == 0x30, "NiMatrix33 size mismatch");
 

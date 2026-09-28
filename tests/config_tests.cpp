@@ -111,13 +111,16 @@ void EveryHotkeyDefaultParses() {
     std::printf("every hotkey list the table defaults to parses\n");
     const Config defaults = Fallout4HT::MakeConfigTable().defaults();
     for (const std::string* list : {&defaults.toggle_key_name, &defaults.cycle_tracking_mode_key_name,
-                                    &defaults.yaw_mode_key_name, &defaults.cycle_tracker_source_key_name}) {
+                                    &defaults.yaw_mode_key_name, &defaults.true_free_look_key_name,
+                                    &defaults.cycle_tracker_source_key_name}) {
         Check(cameraunlock::input::ParseKeyBindings(*list).ok(), list->c_str());
     }
     Check(defaults.toggle_key_name == "End, Ctrl+Shift+Y", "ToggleKey is the fleet's default");
     Check(defaults.cycle_tracking_mode_key_name == "PageUp, Ctrl+Shift+G", "CycleTrackingModeKey is the fleet's default");
     Check(defaults.yaw_mode_key_name == "PageDown, Ctrl+Shift+H", "YawModeKey is the fleet's default");
-    Check(defaults.cycle_tracker_source_key_name == "Ctrl+Shift+U", "CycleTrackerSourceKey keeps the chord it had");
+    Check(defaults.true_free_look_key_name == "Insert, Ctrl+Shift+U", "TrueFreeLookKey is the fleet's default");
+    Check(defaults.cycle_tracker_source_key_name == "Ctrl+Shift+J",
+          "CycleTrackerSourceKey moved off Ctrl+Shift+U, which is true free look's");
 }
 
 void FirstLaunchCreatesTheCommittedFile() {
@@ -129,6 +132,48 @@ void FirstLaunchCreatesTheCommittedFile() {
     Check(ReadBytes(s.folder + Fallout4HT::kConfigFileName) == FreshRender(), "the created file is the fresh render");
     Check(GetFileAttributesW((s.folder + Fallout4HT::kLegacyConfigFileName).c_str()) == INVALID_FILE_ATTRIBUTES,
           "no HeadTracking.ini is written");
+}
+
+void CollisionSettingsFollowDefaultsAndKeepEngineUnits() {
+    const Scratch s = MakeScratch(L"collision");
+    WriteBytes(s.defaults, "[Position]\r\nCollisionEnabled=false\r\nCollisionReleaseSmoothing=0.4\r\n");
+    cfg::ConfigOwner<Config> owner(Options(s));
+    const auto loaded = owner.Load();
+    Check(!loaded.config.collision_enabled, "collision switch follows Defaults.ini");
+    Check(loaded.config.lean_clamp.release_smoothing == 0.4f, "collision release follows Defaults.ini");
+    Check(loaded.config.lean_clamp.skin == 10.0f && loaded.config.collision_channel == 39,
+          "Fallout keeps its own collision units and camera channel");
+    WriteBytes(s.folder + Fallout4HT::kConfigFileName,
+        "[CameraUnlock]\r\nConfigFormat=1\r\n[Position]\r\nCollisionEnabled=true\r\n"
+        "CollisionMargin=20.0\r\nCollisionReleaseSmoothing=0.2\r\nCollisionChannel=36\r\n");
+    cfg::ConfigOwner<Config> overrideOwner(Options(s));
+    const auto overridden = overrideOwner.Load();
+    Check(overridden.config.collision_enabled && overridden.config.lean_clamp.skin == 20.0f &&
+          overridden.config.lean_clamp.release_smoothing == 0.2f && overridden.config.collision_channel == 36,
+          "explicit collision settings override defaults");
+    const Scratch migrated = MakeScratch(L"collision-migrated");
+    WriteBytes(migrated.defaults, "[Position]\r\nCollisionEnabled=false\r\nCollisionReleaseSmoothing=0.4\r\n");
+    WriteBytes(migrated.folder + Fallout4HT::kLegacyConfigFileName, "[General]\r\nAutoEnable=true\r\n");
+    cfg::ConfigOwner<Config> legacyOwner(Options(migrated));
+    const auto legacy = legacyOwner.Load();
+    Check(legacy.status == cfg::ConfigLoadStatus::Migrated && !legacy.config.collision_enabled &&
+          legacy.config.lean_clamp.release_smoothing == 0.4f,
+          "legacy imports inherit the new collision settings from Defaults.ini");
+}
+
+void TrueFreeLookStartsOff() {
+    std::printf("true free look is off by default, and an old ads_mode line is not read\n");
+    const Config defaults = Fallout4HT::MakeConfigTable().defaults();
+    Check(!defaults.true_free_look, "TrueFreeLook defaults to false");
+
+    // tracked was never free look, so the retired cycle's key maps onto nothing.
+    const Scratch s = MakeScratch(L"ads-mode");
+    WriteBytes(s.folder + Fallout4HT::kConfigFileName,
+               "[CameraUnlock]\r\nConfigFormat=1\r\n[Position]\r\nads_mode=tracked\r\n");
+    cfg::ConfigOwner<Config> owner(Options(s));
+    const cfg::ConfigLoadResult<Config> loaded = owner.Load();
+    Check(loaded.status == cfg::ConfigLoadStatus::Canonical, "a file holding ads_mode still loads as canonical");
+    Check(!loaded.config.true_free_look, "ads_mode=tracked leaves true free look off");
 }
 
 void TogglesSaveTheirRowsOnly() {
@@ -167,11 +212,19 @@ void TogglesSaveTheirRowsOnly() {
     }
     Check(threw, "EnableOnStartup is not Writable: End never persists");
 
+    const std::string beforeFreeLook = ReadBytes(path);
+    const cfg::ConfigSaveResult freeLook = owner.Save([](Config& c) { c.true_free_look = true; });
+    Check(freeLook.status == cfg::ConfigSaveStatus::Saved, "the true free look save is Saved");
+    const std::vector<std::string> freeLookLines = ChangedLines(beforeFreeLook, ReadBytes(path));
+    Check(freeLookLines.size() == 1 && freeLookLines[0] == "TrueFreeLook=true",
+          "only TrueFreeLook=default became true");
+
     cfg::ConfigOwner<Config> again(Options(s));
     const cfg::ConfigLoadResult<Config> reread = again.Load();
     Check(reread.status == cfg::ConfigLoadStatus::Canonical, "the saved file reads back as canonical");
     Check(!reread.config.world_space_yaw, "the yaw choice survives a restart");
     Check(reread.config.rotation_enabled && !reread.config.position_enabled, "the mode survives a restart");
+    Check(reread.config.true_free_look, "true free look survives a restart");
 }
 
 }  // namespace
@@ -189,6 +242,8 @@ int main(int argc, char** argv) {
         CommittedFileIsTheFreshRender();
         EveryHotkeyDefaultParses();
         FirstLaunchCreatesTheCommittedFile();
+        CollisionSettingsFollowDefaultsAndKeepEngineUnits();
+        TrueFreeLookStartsOff();
         TogglesSaveTheirRowsOnly();
     } catch (const std::exception& e) {
         std::printf("FAIL: %s\n", e.what());

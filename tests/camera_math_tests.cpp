@@ -333,22 +333,26 @@ void LeanMatchesPreExtraction() {
     Check(forwardLean.x == 0.0f && forwardLean.y == kUnitsPerMeter && forwardLean.z == 0.0f,
           "the core's negative z leans the camera FORWARD, where the 0.40 m limit is");
 
-    // The mod writes the lean twice - once rotated into world space, once
-    // unrotated into the child's local translation - and the engine rebuilds the
+    // The mod writes the lean twice - into niCamera's world translation and,
+    // through WorldToLocal, into its local one - and the engine rebuilds the
     // first from the second inside the frame, so only the local one reaches the
-    // screen. They disagreed about the sign of the forward axis for a while and
-    // nothing that read the world value could see it.
+    // screen. Taken back out of a turned and pitched basis, the world lean must
+    // be the camera-frame lean the identity basis gives.
+    const NiMatrix33 turned = NiMatrix33::FromEulerAngles(0.7f, -0.3f, 0.1f);
     bool agree = true;
     for (float x : kOffsets) {
         for (float y : kOffsets) {
             for (float z : kOffsets) {
-                const NiPoint3 local = TrackerLeanToCameraLocalUnits(x, y, z);
-                const NiPoint3 world = TrackerLeanToWorldUnits(NiMatrix33(), x, y, z);
-                if (local.x != world.x || local.y != world.y || local.z != world.z) agree = false;
+                const NiPoint3 local = turned.WorldToLocal(TrackerLeanToWorldUnits(turned, x, y, z));
+                const NiPoint3 frame = TrackerLeanToWorldUnits(NiMatrix33(), x, y, z);
+                if (fabsf(local.x - frame.x) > 1e-3f || fabsf(local.y - frame.y) > 1e-3f ||
+                    fabsf(local.z - frame.z) > 1e-3f) {
+                    agree = false;
+                }
             }
         }
     }
-    Check(agree, "the local and world lean agree axis for axis under an identity basis");
+    Check(agree, "the local lean taken out of a turned basis is the camera-frame lean");
 }
 
 // Every build before the canonical config inverted x in the position processor

@@ -119,6 +119,26 @@ void* PlayerActor();
 
 std::recursive_mutex& CameraMutationMutex();
 
+// The fraction of the whole lean the collision clamp allowed on the last pose
+// applied, so the rig's share can be held to it on the next camera update.
+float LeanScale();
+
+// What the held pose added to the clean eye, in world units. Only meaningful
+// straight after HoldLatestRenderPose.
+NiPoint3 HeldCameraOffset();
+
+// Records that the first-person skeleton was shifted by `world` for true free
+// look, so the fire path can take the shift off for the length of a shot: the
+// round's origin is read off the skeleton's projectile node, and true free look
+// moves no rounds. Call with the camera mutation lock held.
+void NoteWeaponShift(uintptr_t rig, const NiPoint3& world);
+
+// Takes a true free look shift that is still in the first-person skeleton back
+// off, and forgets it. The camera update reads the eye from that skeleton, so a
+// second camera tick in one frame would otherwise read an eye moved by the
+// first tick's shift. Call with the camera mutation lock held.
+void ClearWeaponShift();
+
 // Is the head pose currently on the renderer-facing camera? Read without taking
 // the lock: this is a diagnostic sample of a window, not a decision.
 bool RenderPoseIsHeld();
