@@ -9,7 +9,8 @@
 param(
     [string]$Config = 'Debug',
     # Build the mod's test binaries and stop, for pixi run render-config.
-    [switch]$BuildOnly
+    [switch]$BuildOnly,
+    [ValidateSet('all', 'unit', 'differential')][string]$Suite = 'all'
 )
 
 Set-StrictMode -Version Latest
@@ -34,7 +35,8 @@ if ($BuildOnly) { return }
 cmake --build $BuildDir --config $Config --target cameraunlock_tests
 if ($LASTEXITCODE -ne 0) { throw "Core test build failed ($LASTEXITCODE)" }
 
-ctest --test-dir $BuildDir -C $Config --output-on-failure -R '^(fallout4_|cameraunlock_tests$)'
+$labels = @{ all = @(); unit = @('-LE', 'differential'); differential = @('--no-tests=error', '-L', 'differential') }[$Suite]
+ctest --test-dir $BuildDir -C $Config --output-on-failure -R '^(fallout4_|cameraunlock_tests$)' @labels
 if ($LASTEXITCODE -ne 0) { throw "Tests failed ($LASTEXITCODE)" }
 
 Write-Host 'All tests passed' -ForegroundColor Green

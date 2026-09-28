@@ -25,7 +25,9 @@ fast-load-restore = "powershell -ExecutionPolicy Bypass -File scripts/fast-load.
 # Native unit tests, and the config differential test that holds the frozen legacy
 # reader to the published build's. Separate build tree, so it never disturbs build/
 # or bin/.
-test = "powershell -ExecutionPolicy Bypass -File scripts/run-tests.ps1"
+test-unit = "powershell -ExecutionPolicy Bypass -File scripts/run-tests.ps1 -Suite unit"
+test-differential = "powershell -ExecutionPolicy Bypass -File scripts/run-tests.ps1 -Suite differential"
+test = { depends-on = ["test-unit", "test-differential"] }
 build-tests = "powershell -ExecutionPolicy Bypass -File scripts/run-tests.ps1 -BuildOnly"
 
 # Rewrites HeadTracking.ini, the committed config, from the config table after a change to a
@@ -61,7 +63,7 @@ clean-all = { cmd = """
     powershell -Command "if (Test-Path 'build') { Remove-Item 'build' -Recurse -Force }; if (Test-Path 'build-tests') { Remove-Item 'build-tests' -Recurse -Force }; if (Test-Path 'release') { Remove-Item 'release' -Recurse -Force }; Write-Host 'All build artifacts cleaned' -ForegroundColor Green"
 """ }
 
-package = { cmd = "powershell -ExecutionPolicy Bypass -File scripts/package-release.ps1", depends-on = ["build-release", "test"] }
+package = { cmd = "powershell -ExecutionPolicy Bypass -File scripts/package-release.ps1", depends-on = ["build-release", "test-unit"] }
 release = { cmd = "powershell -ExecutionPolicy Bypass -File scripts/release.ps1" }
 
 # Core's manifest validator, run by hand, so it is not wired into `package` or into CI - the
