@@ -33,7 +33,11 @@ void RecordBuiltVerdict(const CameraRootSnapshots& snap,
 // reported fault (same aim, body somewhere else on screen) and is invisible to
 // every check on the camera itself, because the camera faithfully renders the
 // pose it was given.
-void RecordTickPose(bool haveRotation, bool hasPosition,
+//
+// positionActive is whether the tracking mode asks for a lean at all. Rotation
+// only is a mode the player picks, and a tick in it publishing no lean is the
+// mode working, not the fault above.
+void RecordTickPose(bool haveRotation, bool positionActive, bool hasPosition,
                     float leanX, float leanY, float leanZ, float appliedDeg);
 
 // How many camera ticks the mod has seen, and how long ago the last one was.

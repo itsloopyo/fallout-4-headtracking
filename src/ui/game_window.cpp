@@ -184,8 +184,12 @@ double GetViewportAspect() {
     static double s_aspect = 0.0;
     static DWORD s_lastCheck = 0;
 
+    // Rate-limited on the failure path too: with no window found yet, gating on a
+    // known aspect ran EnumWindows on the game thread every frame.
+    static bool s_checked = false;
     const DWORD now = GetTickCount();
-    if (s_aspect != 0.0 && (now - s_lastCheck) < kViewportRecheckMillis) return s_aspect;
+    if (s_checked && (now - s_lastCheck) < kViewportRecheckMillis) return s_aspect;
+    s_checked = true;
     s_lastCheck = now;
 
     if (!s_hwnd || !IsWindow(s_hwnd)) s_hwnd = FindGameWindow(0);

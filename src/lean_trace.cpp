@@ -29,6 +29,16 @@ bool g_haveEye = false;
 uint64_t g_lastReport = 0;
 bool g_lastFailed = false;
 bool g_lastContact = false;
+uint32_t g_changesSinceReport = 0;
+bool g_prevFailed = false;
+bool g_prevContact = false;
+
+// A head held still next to a wall puts sub-unit tracker noise either side of
+// the clamp's minimum lean, so contact can flip every frame: one session logged
+// 40 lines a second from the game thread. A change is still reported within a
+// second, with the flips in between counted on that line.
+constexpr uint64_t kMinChangeReportMs = 1000;
+constexpr uint64_t kSampleReportMs = 5000;
 
 struct QueryContext { void* cell; float margin; int channel; };
 
@@ -161,13 +171,20 @@ float Clamp(const NiPoint3& eye, const NiPoint3& offset, uintptr_t camera,
     const uint64_t now = GetTickCount64();
     const bool failed = g_clamp.LastQueryFailed();
     const bool contact = g_clamp.InContact();
-    if (failed != g_lastFailed || contact != g_lastContact || now - g_lastReport >= 5000) {
-        Log::Line("collision: queried=%s contact=%s desired=%.3f allowed=%.3f margin=%.3f near=%.3f channel=%d eye=(%.2f,%.2f,%.2f)",
+    if (failed != g_prevFailed || contact != g_prevContact) ++g_changesSinceReport;
+    g_prevFailed = failed;
+    g_prevContact = contact;
+    const uint64_t sinceReport = now - g_lastReport;
+    const bool changed = failed != g_lastFailed || contact != g_lastContact;
+    if ((changed && sinceReport >= kMinChangeReportMs) || sinceReport >= kSampleReportMs) {
+        Log::Line("collision: queried=%s contact=%s desired=%.3f allowed=%.3f margin=%.3f near=%.3f channel=%d eye=(%.2f,%.2f,%.2f) changes=%u",
             failed ? "FAILED" : "ok", contact ? "yes" : "no", desired.Magnitude(),
-            allowed.Magnitude(), settings.skin, nearPlane, config.collision_channel, eye.x, eye.y, eye.z);
+            allowed.Magnitude(), settings.skin, nearPlane, config.collision_channel, eye.x, eye.y, eye.z,
+            g_changesSinceReport);
         g_lastReport = now;
         g_lastFailed = failed;
         g_lastContact = contact;
+        g_changesSinceReport = 0;
     }
     const float length = desired.Magnitude();
     g_lastScale = length > 0.00001f ? allowed.Magnitude() / length : 1.0f;

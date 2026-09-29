@@ -37,6 +37,7 @@ public:
     void Toggle();
 
     void CycleDofMode();
+    bool IsPositionActive() const { return m_session.IsPositionActive(); }
     void ToggleYawMode();
 
     // Sights locked (false) or true free look (true): what a lean does to the eye

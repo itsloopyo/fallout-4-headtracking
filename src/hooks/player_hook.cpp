@@ -110,7 +110,25 @@ std::atomic<uint64_t> g_skipNoSnapshot{0};
 std::atomic<uint64_t> g_skipNoRenderPose{0};
 std::atomic<uint64_t> g_skipRotateFailed{0};
 
-bool ApplyRenderPose(const CameraRootSnapshots& snap, const RenderPose& pose,
+bool ReadCameraState(const CameraRootSnapshots& snap, SavedCameraState& saved, float& nearPlane) {
+    static std::atomic<uint64_t> s_faults{0};
+    __try {
+        saved.rootLocal = *LocalRotationOf(snap.cameraRoot);
+        saved.rootWorld = *WorldRotationOf(snap.cameraRoot);
+        saved.niCamLocal = *LocalRotationOf(snap.niCamera);
+        saved.niCamWorld = *WorldRotationOf(snap.niCamera);
+        saved.rootLocalPosition = *LocalTranslationOf(snap.cameraRoot);
+        saved.rootWorldPosition = *WorldTranslationOf(snap.cameraRoot);
+        saved.niCamLocalPosition = *LocalTranslationOf(snap.niCamera);
+        saved.niCamWorldPosition = *WorldTranslationOf(snap.niCamera);
+        nearPlane = *reinterpret_cast<const float*>(snap.niCamera + 0x170);
+        return true;
+    } __except (SehAbsorbAccessViolation(GetExceptionCode(), "render pose read", s_faults)) {
+    }
+    return false;
+}
+
+bool WriteRenderPose(const CameraRootSnapshots& snap, const RenderPose& pose,
                      bool includeRoot, SavedCameraState& saved,
                      OverrideReference& reference) {
     static std::atomic<uint64_t> s_faults{0};
@@ -119,36 +137,7 @@ bool ApplyRenderPose(const CameraRootSnapshots& snap, const RenderPose& pose,
         NiMatrix33* rootWorld = WorldRotationOf(snap.cameraRoot);
         NiMatrix33* niCamLocal = LocalRotationOf(snap.niCamera);
         NiMatrix33* niCamWorld = WorldRotationOf(snap.niCamera);
-
-        saved.rootLocal = *rootLocal;
-        saved.rootWorld = *rootWorld;
-        saved.niCamLocal = *niCamLocal;
-        saved.niCamWorld = *niCamWorld;
-        saved.rootLocalPosition = *LocalTranslationOf(snap.cameraRoot);
-        saved.rootWorldPosition = *WorldTranslationOf(snap.cameraRoot);
-        saved.niCamLocalPosition = *LocalTranslationOf(snap.niCamera);
-        saved.niCamWorldPosition = *WorldTranslationOf(snap.niCamera);
-
-        // What the camera adds to the clean eye. The rig's share of the lean is
-        // already IN the clean eye, because the camera update read it off the
-        // first-person skeleton, so the whole lean is clamped from the un-leaned
-        // eye and the camera makes up whatever the rig did not carry. When the
-        // clamp tightens, that is negative and the eye stops at the wall this
-        // frame; the rig follows it on the next.
-        NiPoint3 offset;
-        if (pose.hasPosition) {
-            const NiPoint3 desired = TrackerLeanToWorldUnits(saved.rootWorld,
-                pose.positionX + pose.rigX, pose.positionY + pose.rigY, pose.positionZ + pose.rigZ);
-            const NiPoint3 unleaned(saved.niCamWorldPosition.x - pose.rigWorld.x,
-                                    saved.niCamWorldPosition.y - pose.rigWorld.y,
-                                    saved.niCamWorldPosition.z - pose.rigWorld.z);
-            const float leanScale = lean_trace::Clamp(unleaned, desired, snap.niCamera,
-                pose.cameraState, *reinterpret_cast<const float*>(snap.niCamera + 0x170),
-                pose.tick, pose.deltaTime);
-            g_leanScale.store(leanScale, std::memory_order_relaxed);
-            offset = CameraShareOfLean(desired, pose.rigWorld, leanScale);
-        }
-        saved.cameraOffset = offset;
+        const NiPoint3 offset = saved.cameraOffset;
 
         const NiMatrix33 trackedRoot =
             pose.rotation.cameraFrame * saved.rootWorld * pose.rotation.worldFrame;
@@ -209,6 +198,37 @@ bool ApplyRenderPose(const CameraRootSnapshots& snap, const RenderPose& pose,
     } __except (SehAbsorbAccessViolation(GetExceptionCode(), "render pose apply", s_faults)) {
     }
     return false;
+}
+
+bool ApplyRenderPose(const CameraRootSnapshots& snap, const RenderPose& pose,
+                     bool includeRoot, SavedCameraState& saved,
+                     OverrideReference& reference) {
+    float nearPlane = 0.0f;
+    if (!ReadCameraState(snap, saved, nearPlane)) return false;
+
+    // What the camera adds to the clean eye. The rig's share of the lean is
+    // already IN the clean eye, because the camera update read it off the
+    // first-person skeleton, so the whole lean is clamped from the un-leaned
+    // eye and the camera makes up whatever the rig did not carry. When the
+    // clamp tightens, that is negative and the eye stops at the wall this
+    // frame; the rig follows it on the next.
+    //
+    // Outside any __try: the clamp calls the engine's collision query, and a
+    // fault inside Havok is the game's (seh_guard.h).
+    NiPoint3 offset;
+    if (pose.hasPosition) {
+        const NiPoint3 desired = TrackerLeanToWorldUnits(saved.rootWorld,
+            pose.positionX + pose.rigX, pose.positionY + pose.rigY, pose.positionZ + pose.rigZ);
+        const NiPoint3 unleaned(saved.niCamWorldPosition.x - pose.rigWorld.x,
+                                saved.niCamWorldPosition.y - pose.rigWorld.y,
+                                saved.niCamWorldPosition.z - pose.rigWorld.z);
+        const float leanScale = lean_trace::Clamp(unleaned, desired, snap.niCamera,
+            pose.cameraState, nearPlane, pose.tick, pose.deltaTime);
+        g_leanScale.store(leanScale, std::memory_order_relaxed);
+        offset = CameraShareOfLean(desired, pose.rigWorld, leanScale);
+    }
+    saved.cameraOffset = offset;
+    return WriteRenderPose(snap, pose, includeRoot, saved, reference);
 }
 
 void RestoreCameraState(const CameraRootSnapshots& snap, SavedCameraState& saved) {

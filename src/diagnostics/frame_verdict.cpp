@@ -302,13 +302,13 @@ void GetCameraTickLiveness(unsigned long long& totalTicks,
     msSinceLastTick = last ? GetTickCount64() - last : 0;
 }
 
-void RecordTickPose(bool haveRotation, bool hasPosition,
+void RecordTickPose(bool haveRotation, bool positionActive, bool hasPosition,
                     float leanX, float leanY, float leanZ, float appliedDeg) {
     ++g_ticks;
     g_totalTicks.fetch_add(1, std::memory_order_relaxed);
     g_lastTickMs.store(GetTickCount64(), std::memory_order_relaxed);
     if (!haveRotation) ++g_ticksNoRotation;
-    if (haveRotation && !hasPosition) ++g_ticksNoLean;
+    if (haveRotation && positionActive && !hasPosition) ++g_ticksNoLean;
 
     const float lean[3] = { leanX, leanY, leanZ };
     if (g_hasPrevTick) {

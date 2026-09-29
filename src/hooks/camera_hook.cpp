@@ -329,7 +329,7 @@ void __fastcall PlayerCameraUpdateHook(void* thisCamera) {
         ? ComputeHeadRotation(yaw, pitch, roll, worldSpaceYaw)
         : HeadRotation{};
 
-    RecordTickPose(haveRotation, hasPosition, posX, posY, posZ,
+    RecordTickPose(haveRotation, mod.IsPositionActive(), hasPosition, posX, posY, posZ,
                    sqrtf(yaw * yaw + pitch * pitch + roll * roll));
 
     CameraMutationMutex().lock();
@@ -432,7 +432,13 @@ void __fastcall PlayerCameraUpdateHook(void* thisCamera) {
         if (HoldLatestRenderPose(snapshot)) {
             ApplyFreeLookWeapon(split);
         } else {
-            Log::Line("ERROR: failed to hold the current render pose");
+            // Every tick fails alike once it fails at all, so the count doubles
+            // between lines rather than writing one a frame on the game thread.
+            static uint64_t s_holdFailures = 0;
+            if ((++s_holdFailures & (s_holdFailures - 1)) == 0) {
+                Log::Line("ERROR: failed to hold the current render pose (%llu so far)",
+                          static_cast<unsigned long long>(s_holdFailures));
+            }
         }
 
     } __except (SehAbsorbAccessViolation(GetExceptionCode(), "camera hook", s_faults)) {
