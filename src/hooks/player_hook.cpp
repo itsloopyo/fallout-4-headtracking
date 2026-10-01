@@ -15,6 +15,7 @@
 #include "diagnostics/ab_switches.h"
 #include "diagnostics/frame_verdict.h"
 #include "game/fallout4_types.h"
+#include "game/game_state.h"
 
 #include <cameraunlock/memory/rtti_vtable.h>
 
@@ -434,6 +435,13 @@ bool BeginTrackedOverride(CameraRootSnapshots& snap, OverridePath& path,
     if (t_overrideDepth++ != 0) {
         path = OverridePath::Nested;
         return true;
+    }
+
+    // The menu can open between camera ticks, leaving a held pose and a valid
+    // snapshot behind. Remove it before the menu's view is built.
+    if (GameState::IsPipboyOpen()) {
+        ReleaseRenderPoseLocked();
+        return AbandonOverride(g_skipNoRenderPose);
     }
 
     if (!haveSnapshot) return AbandonOverride(g_skipNoSnapshot);

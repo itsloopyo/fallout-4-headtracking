@@ -5,12 +5,64 @@
 #include "core/logging.h"
 #include "core/seh_guard.h"
 #include "game/fallout4_types.h"
+#include "hooks/hook_slot.h"
 
 #include <cameraunlock/memory/pattern_scanner.h>
 #include <cameraunlock/memory/rtti_vtable.h>
 
 namespace Fallout4HT {
 namespace {
+
+using MenuStackCallback = void(__fastcall*)(void*);
+MenuStackCallback g_originalMenuAdded = nullptr;
+MenuStackCallback g_originalMenuRemoved = nullptr;
+HookSlot g_menuAddedHook;
+HookSlot g_menuRemovedHook;
+uintptr_t g_pipboyMenuVtable = 0;
+std::atomic<bool> g_pipboyOpen{false};
+
+void __fastcall MenuAdded(void* menu) {
+    if (*static_cast<uintptr_t*>(menu) == g_pipboyMenuVtable) {
+        g_pipboyOpen.store(true, std::memory_order_relaxed);
+        Log::Line("game state: Pip-Boy opened, head tracking suspended");
+    }
+    g_originalMenuAdded(menu);
+}
+
+void __fastcall MenuRemoved(void* menu) {
+    const bool pipboy = *static_cast<uintptr_t*>(menu) == g_pipboyMenuVtable;
+    g_originalMenuRemoved(menu);
+    if (pipboy) {
+        g_pipboyOpen.store(false, std::memory_order_relaxed);
+        Log::Line("game state: Pip-Boy closed, head tracking follows gameplay state");
+    }
+}
+
+bool InstallPipboyGate(HMODULE module) {
+    cameraunlock::memory::VtableInfo info{};
+    if (!cameraunlock::memory::FindVtableFromRTTI(module, "PipboyMenu", info, 13) ||
+        info.vfunc_count < 13) {
+        Log::Line("ERROR: Pip-Boy menu vtable not found; cannot install its tracking gate");
+        return false;
+    }
+    g_pipboyMenuVtable = info.vtable_address;
+    const auto* vtable = reinterpret_cast<const uintptr_t*>(info.vtable_address);
+    // GameMenuBase shares these callbacks with other menus; filter by the
+    // concrete vtable instead of suppressing every menu that calls them.
+    if (!g_menuAddedHook.Install(reinterpret_cast<void*>(vtable[0xB]),
+                                reinterpret_cast<void*>(&MenuAdded),
+                                reinterpret_cast<void**>(&g_originalMenuAdded),
+                                "Pip-Boy menu added")) return false;
+    if (!g_menuRemovedHook.Install(reinterpret_cast<void*>(vtable[0xC]),
+                                  reinterpret_cast<void*>(&MenuRemoved),
+                                  reinterpret_cast<void**>(&g_originalMenuRemoved),
+                                  "Pip-Boy menu removed")) {
+        g_menuAddedHook.Remove();
+        return false;
+    }
+    Log::Line("game state: Pip-Boy menu gate installed");
+    return true;
+}
 
 // The targeting menu leaves no camera state to read, so the mod asks the VATS
 // singleton itself. RTTI finds the class on any build and its vtable pointer
@@ -189,12 +241,23 @@ bool GameState::Initialize() {
     ResolveVatsCameraState(gameModule);
     ResolveVatsSingleton(true);
 
-    return true;
+    return InstallPipboyGate(gameModule);
+}
+
+void GameState::Shutdown() {
+    g_menuRemovedHook.Remove();
+    g_menuAddedHook.Remove();
+    g_pipboyOpen.store(false, std::memory_order_relaxed);
+}
+
+bool GameState::IsPipboyOpen() {
+    return g_pipboyOpen.load(std::memory_order_relaxed);
 }
 
 bool GameState::EnsureVatsSingletonResolved() { return ResolveVatsSingleton(false); }
 
 bool GameState::IsInGameplay(void* playerCamera) {
+    if (IsPipboyOpen()) return false;
     if (IsVatsAttackCamera(playerCamera)) return false;
     if (!g_gateTrusted.load(std::memory_order_relaxed)) return true;
 

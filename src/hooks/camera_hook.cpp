@@ -486,7 +486,7 @@ bool InstallPlayerCameraUpdateHook(HMODULE gameModule, uintptr_t moduleBase,
 
 bool LatestRenderPose(RenderPose& pose) {
     std::lock_guard<std::mutex> lock(g_renderPoseMutex);
-    if (!g_hasRenderPose) return false;
+    if (!g_hasRenderPose || GameState::IsPipboyOpen()) return false;
     pose = g_latestRenderPose;
     return true;
 }
@@ -495,7 +495,8 @@ bool InstallCameraHook() {
     Log::Line("Installing camera hook...");
 
     if (!GameState::Initialize()) {
-        Log::Line("WARN: Game state detection init failed");
+        Log::Line("ERROR: Game state detection init failed; camera tracking not installed");
+        return false;
     }
 
     // Scans .data for the engine's own FOV settings, so it runs here on the
@@ -559,6 +560,7 @@ void RemoveCameraHook() {
     RemovePlayerHook();
     RemoveCrosshairHook();
     RemoveAimDecouplingHooks();
+    GameState::Shutdown();
 
     if (g_updateHook.IsInstalled()) {
         g_updateHook.Remove();

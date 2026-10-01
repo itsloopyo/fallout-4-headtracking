@@ -273,7 +273,9 @@ code should name them here too.
 - CommonLibF4 - https://github.com/Ryan-rsm-McKenzie/CommonLibF4 (MIT), by
   Ryan-rsm-McKenzie. The source of the `NiAVObject` / `NiNode` / `NiCamera` /
   `TESCamera` field offsets and of the `Actor::Update` and `TESCamera::Update`
-  vtable indices this mod hooks.
+  vtable indices this mod hooks. The `IMenu::OnAddedToMenuStack` and
+  `IMenu::OnRemovedFromMenuStack` vtable indices also come from CommonLibF4;
+  the Pip-Boy gate uses these callbacks through `PipboyMenu`'s runtime vtable.
 - CommonLibSSE-NG - https://github.com/alandtse/CommonLibVR (MIT), a maintained
   fork of Ryan-rsm-McKenzie's CommonLibSSE. Used to cross-check those offsets
   against the Skyrim layout, which is where the "Skyrim: 0x..." comparisons in
