@@ -6,6 +6,7 @@
 #include "camera_math.h"
 #include "camera_snapshot.h"
 #include "crosshair_hook.h"
+#include "hit_marker_hook.h"
 #include "hook_slot.h"
 #include "module_scan.h"
 #include "player_hook.h"
@@ -362,6 +363,8 @@ void __fastcall PlayerCameraUpdateHook(void* thisCamera) {
     // Nothing is applied this frame, so there is nothing for the fire path to
     // undo either.
     if (gate == TickGate::Suppressed || !haveRotation) {
+        CameraNodes nodes{};
+        PublishHitMarkerView(ResolveCameraNodes(thisCamera, nodes) ? nodes.niCamera : 0);
         RetireTick(mod);
         CameraMutationMutex().unlock();
         return;
@@ -376,6 +379,7 @@ void __fastcall PlayerCameraUpdateHook(void* thisCamera) {
     __try {
         CameraNodes nodes{};
         if (!ResolveCameraNodes(thisCamera, nodes)) {
+            PublishHitMarkerView(0);
             // The scene graph is being torn down or rebuilt. Whatever node the
             // last snapshot points at may already be freed.
             RetireTick(mod);
@@ -440,8 +444,10 @@ void __fastcall PlayerCameraUpdateHook(void* thisCamera) {
                           static_cast<unsigned long long>(s_holdFailures));
             }
         }
+        PublishHitMarkerView(nodes.niCamera);
 
     } __except (SehAbsorbAccessViolation(GetExceptionCode(), "camera hook", s_faults)) {
+        PublishHitMarkerView(0);
         PublishCameraRootSnapshots(CameraRootSnapshots{});
     }
     CameraMutationMutex().unlock();
@@ -486,7 +492,7 @@ bool InstallPlayerCameraUpdateHook(HMODULE gameModule, uintptr_t moduleBase,
 
 bool LatestRenderPose(RenderPose& pose) {
     std::lock_guard<std::mutex> lock(g_renderPoseMutex);
-    if (!g_hasRenderPose || GameState::IsPipboyOpen()) return false;
+    if (!g_hasRenderPose || GameState::IsTrackingMenuOpen()) return false;
     pose = g_latestRenderPose;
     return true;
 }

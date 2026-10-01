@@ -19,26 +19,37 @@ MenuStackCallback g_originalMenuRemoved = nullptr;
 HookSlot g_menuAddedHook;
 HookSlot g_menuRemovedHook;
 uintptr_t g_pipboyMenuVtable = 0;
+uintptr_t g_scopeMenuVtable = 0;
 std::atomic<bool> g_pipboyOpen{false};
+std::atomic<bool> g_scopeOpen{false};
 
 void __fastcall MenuAdded(void* menu) {
     if (*static_cast<uintptr_t*>(menu) == g_pipboyMenuVtable) {
         g_pipboyOpen.store(true, std::memory_order_relaxed);
         Log::Line("game state: Pip-Boy opened, head tracking suspended");
     }
+    if (*static_cast<uintptr_t*>(menu) == g_scopeMenuVtable) {
+        g_scopeOpen.store(true, std::memory_order_relaxed);
+        Log::Line("game state: scope overlay opened, head tracking suspended");
+    }
     g_originalMenuAdded(menu);
 }
 
 void __fastcall MenuRemoved(void* menu) {
     const bool pipboy = *static_cast<uintptr_t*>(menu) == g_pipboyMenuVtable;
+    const bool scope = *static_cast<uintptr_t*>(menu) == g_scopeMenuVtable;
     g_originalMenuRemoved(menu);
     if (pipboy) {
         g_pipboyOpen.store(false, std::memory_order_relaxed);
         Log::Line("game state: Pip-Boy closed, head tracking follows gameplay state");
     }
+    if (scope) {
+        g_scopeOpen.store(false, std::memory_order_relaxed);
+        Log::Line("game state: scope overlay closed, head tracking follows gameplay state");
+    }
 }
 
-bool InstallPipboyGate(HMODULE module) {
+bool InstallTrackingMenuGate(HMODULE module) {
     cameraunlock::memory::VtableInfo info{};
     if (!cameraunlock::memory::FindVtableFromRTTI(module, "PipboyMenu", info, 13) ||
         info.vfunc_count < 13) {
@@ -47,6 +58,14 @@ bool InstallPipboyGate(HMODULE module) {
     }
     g_pipboyMenuVtable = info.vtable_address;
     const auto* vtable = reinterpret_cast<const uintptr_t*>(info.vtable_address);
+    cameraunlock::memory::VtableInfo scope{};
+    if (!cameraunlock::memory::FindVtableFromRTTI(module, "ScopeMenu", scope, 13) ||
+        scope.vfunc_count < 13 || scope.vfuncs[0xB] != vtable[0xB] ||
+        scope.vfuncs[0xC] != vtable[0xC]) {
+        Log::Line("ERROR: scope overlay menu callbacks could not be validated");
+        return false;
+    }
+    g_scopeMenuVtable = scope.vtable_address;
     // GameMenuBase shares these callbacks with other menus; filter by the
     // concrete vtable instead of suppressing every menu that calls them.
     if (!g_menuAddedHook.Install(reinterpret_cast<void*>(vtable[0xB]),
@@ -60,7 +79,7 @@ bool InstallPipboyGate(HMODULE module) {
         g_menuAddedHook.Remove();
         return false;
     }
-    Log::Line("game state: Pip-Boy menu gate installed");
+    Log::Line("game state: Pip-Boy and scope overlay menu gates installed");
     return true;
 }
 
@@ -241,23 +260,25 @@ bool GameState::Initialize() {
     ResolveVatsCameraState(gameModule);
     ResolveVatsSingleton(true);
 
-    return InstallPipboyGate(gameModule);
+    return InstallTrackingMenuGate(gameModule);
 }
 
 void GameState::Shutdown() {
     g_menuRemovedHook.Remove();
     g_menuAddedHook.Remove();
     g_pipboyOpen.store(false, std::memory_order_relaxed);
+    g_scopeOpen.store(false, std::memory_order_relaxed);
 }
 
-bool GameState::IsPipboyOpen() {
-    return g_pipboyOpen.load(std::memory_order_relaxed);
+bool GameState::IsTrackingMenuOpen() {
+    return g_pipboyOpen.load(std::memory_order_relaxed) ||
+           g_scopeOpen.load(std::memory_order_relaxed);
 }
 
 bool GameState::EnsureVatsSingletonResolved() { return ResolveVatsSingleton(false); }
 
 bool GameState::IsInGameplay(void* playerCamera) {
-    if (IsPipboyOpen()) return false;
+    if (IsTrackingMenuOpen()) return false;
     if (IsVatsAttackCamera(playerCamera)) return false;
     if (!g_gateTrusted.load(std::memory_order_relaxed)) return true;
 

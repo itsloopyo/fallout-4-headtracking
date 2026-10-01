@@ -128,4 +128,8 @@ AimProjection ProjectBodyAimToNdc(const float (&cleanNiCamWorld)[3][4],
                                   const float (&trackedNiCamWorld)[3][4],
                                   float frustumRight, float frustumTop);
 
+AimProjection ProjectWorldPointToNdc(const NiPoint3& point, const NiPoint3& eye,
+                                     const NiMatrix33& cameraWorld,
+                                     float frustumRight, float frustumTop);
+
 } // namespace Fallout4HT

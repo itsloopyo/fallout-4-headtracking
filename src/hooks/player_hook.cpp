@@ -439,7 +439,7 @@ bool BeginTrackedOverride(CameraRootSnapshots& snap, OverridePath& path,
 
     // The menu can open between camera ticks, leaving a held pose and a valid
     // snapshot behind. Remove it before the menu's view is built.
-    if (GameState::IsPipboyOpen()) {
+    if (GameState::IsTrackingMenuOpen()) {
         ReleaseRenderPoseLocked();
         return AbandonOverride(g_skipNoRenderPose);
     }

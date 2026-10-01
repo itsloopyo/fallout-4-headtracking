@@ -535,6 +535,29 @@ void CrosshairStageOffsetMatchesPreExtraction() {
           "an unreadable window leaves the crosshair where the game authored it");
 }
 
+void ImpactProjection() {
+    const NiMatrix33 basis;
+    const NiPoint3 eye(100.0f, 200.0f, 300.0f);
+    const auto near = ProjectWorldPointToNdc(NiPoint3(110, 205, 305), eye, basis, 1, 0.5f);
+    Check(near.valid && near.ndcX == 0.5f && near.ndcY == 1.0f,
+          "impact projects relative to the camera position and asymmetric frustum");
+    const auto far = ProjectWorldPointToNdc(NiPoint3(120, 205, 305), eye, basis, 1, 0.5f);
+    Check(far.valid && far.ndcX == 0.25f && far.ndcY == 0.5f,
+          "impact depth changes its parallax");
+    const auto leaned = ProjectWorldPointToNdc(NiPoint3(110, 205, 305),
+                                               NiPoint3(100, 200, 302), basis, 1, 0.5f);
+    Check(leaned.valid && std::fabs(leaned.ndcX - 0.3f) < 1e-6f,
+          "camera lean changes the projected impact position");
+    Check(!ProjectWorldPointToNdc(NiPoint3(90, 200, 300), eye, basis, 1, 1).valid,
+          "impact behind the camera is hidden");
+    Check(!ProjectWorldPointToNdc(eye, eye, basis, 1, 1).valid,
+          "impact at the camera cannot divide by zero");
+    const CrosshairStageOffset offset = ComputeCrosshairStageOffset(
+        true, near.valid, near.ndcX, near.ndcY, 16.0 / 9.0, true);
+    Check(offset.dx == 320 && offset.dy == -360,
+          "impact above and right maps above and right on the HUD");
+}
+
 }  // namespace
 
 int main() {
@@ -548,6 +571,7 @@ int main() {
     InvertXFoldMatchesProcessorInversion();
     AimProjectionMatchesPreExtraction();
     CrosshairStageOffsetMatchesPreExtraction();
+    ImpactProjection();
 
     if (g_failures == 0) {
         std::printf("All tests passed!\n");

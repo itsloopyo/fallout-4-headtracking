@@ -168,4 +168,17 @@ AimProjection ProjectBodyAimToNdc(const float (&cleanNiCamWorld)[3][4],
     return out;
 }
 
+AimProjection ProjectWorldPointToNdc(const NiPoint3& point, const NiPoint3& eye,
+                                     const NiMatrix33& cameraWorld,
+                                     float frustumRight, float frustumTop) {
+    const NiPoint3 delta(point.x - eye.x, point.y - eye.y, point.z - eye.z);
+    const NiPoint3 view = cameraWorld.WorldToLocal(delta);
+    if (!(view.x > 0.0001f) || !(frustumRight > 0.0f) || !(frustumTop > 0.0f)) {
+        return {0.0f, 0.0f, false};
+    }
+    const float x = view.z / (view.x * frustumRight);
+    const float y = view.y / (view.x * frustumTop);
+    return {x, y, std::isfinite(x) && std::isfinite(y)};
+}
+
 } // namespace Fallout4HT

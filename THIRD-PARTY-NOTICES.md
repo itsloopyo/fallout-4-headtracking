@@ -275,7 +275,8 @@ code should name them here too.
   `TESCamera` field offsets and of the `Actor::Update` and `TESCamera::Update`
   vtable indices this mod hooks. The `IMenu::OnAddedToMenuStack` and
   `IMenu::OnRemovedFromMenuStack` vtable indices also come from CommonLibF4;
-  the Pip-Boy gate uses these callbacks through `PipboyMenu`'s runtime vtable.
+  the menu gates use these callbacks through the `PipboyMenu` and `ScopeMenu`
+  runtime vtables.
 - CommonLibSSE-NG - https://github.com/alandtse/CommonLibVR (MIT), a maintained
   fork of Ryan-rsm-McKenzie's CommonLibSSE. Used to cross-check those offsets
   against the Skyrim layout, which is where the "Skyrim: 0x..." comparisons in
@@ -293,6 +294,14 @@ parent-cell offset were cross-checked against the MIT
 [libxse/commonlibf4](https://github.com/libxse/commonlibf4) declarations. These are
 binary interface facts only. No source from either fork is compiled or copied
 into the collision adapter.
+
+The hit-marker adapter uses the `PlayerCharacter` hit-event sink offset,
+`TESHitEvent` and `DamageImpactData` field offsets from libxse/commonlibf4.
+These are binary interface
+facts only; no implementation from that project is copied or compiled into
+the adapter. The `FlashHitIndicator` virtual slots, Scaleform display-info
+layout and runtime callback addresses
+were checked against the installed game binaries.
 
 ---
 

@@ -7,8 +7,7 @@
 namespace Fallout4HT {
 
 // Gates head tracking to actual gameplay, which for Fallout 4 means keeping it
-// off for Pip-Boy and both halves of VATS. Head tracking is actively wrong in each, for its
-// own reason:
+// off for Pip-Boy, scope overlays and both halves of VATS. VATS needs two signals:
 //
 //  - The targeting menu does not reframe. It freezes the view you had and labels
 //    the target through it, so a head-turned camera puts the target off screen
@@ -31,7 +30,7 @@ class GameState {
 public:
     static bool Initialize();
     static void Shutdown();
-    static bool IsPipboyOpen();
+    static bool IsTrackingMenuOpen();
     // playerCamera is the PlayerCamera the engine is ticking; its current state
     // is what identifies the attack camera.
     static bool IsInGameplay(void* playerCamera);

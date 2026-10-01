@@ -5,6 +5,7 @@
 #include <cstring>
 
 #include "crosshair_hook.h"
+#include "hit_marker_hook.h"
 #include "diagnostics/ab_switches.h"
 #include "camera_snapshot.h"
 #include "crosshair_layout.h"
@@ -310,9 +311,11 @@ void InstallCrosshairHook(const TextSection& text, uintptr_t moduleBase) {
     g_gfxScopeInit = reinterpret_cast<GfxScopeInit_t>(scopeInitFn);
     g_gfxScopeApply = reinterpret_cast<GfxScopeApply_t>(scopeApplyFn);
     Log::Line("crosshair hook installed");
+    InstallHitMarkerHook(moduleBase, scopeInitFn, scopeApplyFn, g_horizontalScaleCapped);
 }
 
 void RemoveCrosshairHook() {
+    RemoveHitMarkerHook();
     if (!g_crosshairHook.IsInstalled()) return;
     g_crosshairHook.Remove();
     g_gfxScopeInit = nullptr;

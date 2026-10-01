@@ -52,6 +52,7 @@ set(MOD_SOURCES
     src/hooks/camera_math.cpp
     src/hooks/camera_snapshot.cpp
     src/hooks/crosshair_hook.cpp
+    src/hooks/hit_marker_hook.cpp
     src/hooks/crosshair_layout.cpp
     src/hooks/hook_slot.cpp
     src/hooks/module_scan.cpp
