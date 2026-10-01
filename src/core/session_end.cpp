@@ -11,27 +11,8 @@
 namespace Fallout4HT {
 namespace {
 
-// Why this is a hook on NtTerminateProcess, of all things:
-//
-// A log that simply stops cannot be read. A player who quit and a player whose
-// game died leave byte-identical evidence, so every "it crashed" report has to
-// begin by establishing whether there was a crash at all - two of them arrived
-// that way and neither could be answered.
-//
-// The obvious home for a clean-exit line is DLL_PROCESS_DETACH, which the
-// loader runs on a normal exit and skips when a process is killed. Fallout 4
-// never runs it. Measured rather than assumed: a detach handler writing through
-// its own fresh file handle, so that a closed log could not explain a missing
-// line, produced no file at all after a clean quit. The engine terminates
-// rather than unwinds.
-//
-// kernel32's TerminateProcess is not it either - that hook arms and never
-// fires. The call the engine actually makes is ntdll!NtTerminateProcess, which
-// is also where kernel32!TerminateProcess and RtlExitUserProcess both end up,
-// so one hook here covers every way out.
-//
-// A crash does not come through here. The process is torn down from outside by
-// WerFault, so the line is absent exactly when it should be.
+// The engine can terminate without DLL_PROCESS_DETACH. NtTerminateProcess
+// also receives fault exits, so reaching it does not establish a clean quit.
 
 using NtTerminateProcess_t = LONG(NTAPI*)(HANDLE, LONG);
 
@@ -53,8 +34,8 @@ LONG NTAPI NtTerminateProcessDetour(HANDLE process, LONG exitStatus) {
         // down, where another thread may hold the log mutex and never release
         // it. It takes no lock and flushes, which is what a last line needs.
         Log::EmergencyLine(
-            "session ended through the game's own quit path - a log without"
-            " this line ended in a crash or was killed from outside");
+            "session termination requested: exit status 0x%08lX",
+            static_cast<unsigned long>(exitStatus));
     }
     return g_originalNtTerminateProcess(process, exitStatus);
 }
@@ -79,7 +60,7 @@ void InstallSessionEndMarker() {
     if (g_ntTerminateSlot.Install(target, reinterpret_cast<void*>(&NtTerminateProcessDetour),
                                   reinterpret_cast<void**>(&g_originalNtTerminateProcess),
                                   "session-end marker")) {
-        Log::Line("session-end marker armed - a clean quit will say so in this log");
+        Log::Line("session-end marker armed - process termination status will be logged");
     }
 }
 
