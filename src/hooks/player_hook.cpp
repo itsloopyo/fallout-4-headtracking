@@ -364,6 +364,11 @@ void __fastcall PlayerUpdateHook(void* thisPlayer, float deltaTime) {
     g_playerActor.store(thisPlayer, std::memory_order_relaxed);
     BeginCleanCameraScope();
     __try {
+        // Animation must not consume last frame's presentation offsets or
+        // rebuild only part of the skeleton before those offsets are removed.
+        ClearWeaponShift();
+        AdsLean::CarryOnRig(AdsLean::FirstPersonRig(reinterpret_cast<uintptr_t>(thisPlayer)),
+                            NiPoint3());
         g_originalUpdate(thisPlayer, deltaTime);
     } __finally {
         EndCleanCameraScope();
