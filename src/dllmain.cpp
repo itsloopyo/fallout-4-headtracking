@@ -6,6 +6,7 @@
 #include "core/path_utils.h"
 #include "ui/game_window.h"
 #include "game/game_state.h"
+#include "game/weapon_debris.h"
 #include "hooks/player_hook.h"
 #include "diagnostics/frame_verdict.h"
 
@@ -90,6 +91,7 @@ unsigned __stdcall InitThread(void* lpParam) {
                   " the window (reticle placement, windowed centring) will pick it up late",
                   kGameWindowWaitMillis);
     }
+    WeaponDebris::DisableForSession();
     Sleep(kPostWindowSettleMillis);
 
     CenterGameWindow();

@@ -338,6 +338,21 @@ sensitivity had jumped; the mod scales the pose so it does not. Roll is left
 alone, because a head tilt rotates the picture by the same angle whatever the
 field of view.
 
+### Weapon debris
+
+While the mod is loaded, the game's weapon debris effect (NVIDIA FleX, "Weapon
+Debris" in the game launcher's advanced settings) is switched off. With it on,
+Fallout 4 can crash inside its own FleX library within a minute or so of a save
+loading. That was measured on an RTX 5080 with the mod's hooks not installed, so
+it is the game's fault and not the mod's, but it reads as the mod crashing the
+game.
+
+The switch lasts for the session only. `bNVFlexEnable` in
+`Documents\My Games\Fallout4\Fallout4Prefs.ini` is left as you have it, also
+when the game saves its settings, so the game behaves as before once the mod is
+removed. `HeadTracking.log` says at startup whether it switched the effect off
+or found it off already.
+
 ## Troubleshooting
 
 - **Mod not loading.** Confirm `dxgi.dll` and `Fallout4HeadTracking.asi` are

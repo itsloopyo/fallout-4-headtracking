@@ -5,6 +5,7 @@
 #include "logging.h"
 #include "path_utils.h"
 #include "session_end.h"
+#include "game/weapon_debris.h"
 #include "hooks/camera_hook.h"
 #include "ui/notification.h"
 
@@ -241,6 +242,7 @@ bool Mod::InitializeHooks() {
     // failed still has to be able to say whether it ended or died, because
     // that is precisely the log someone will be reading.
     InstallSessionEndMarker();
+    WeaponDebris::InstallPrefsWriteGuard();
 
     m_cameraHookInstalled = InstallCameraHook();
     if (m_cameraHookInstalled) {

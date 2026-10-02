@@ -7,6 +7,7 @@
 #include "core/seh_guard.h"
 #include "hooks/module_scan.h"
 #include "game/fallout4_types.h"
+#include "game/game_setting.h"
 
 #include <cameraunlock/camera/zoom_compensation.h>
 
@@ -17,14 +18,6 @@
 namespace Fallout4HT {
 namespace FovSettings {
 namespace {
-
-// Bethesda's Setting is { vtable, value union, const char* name }, so a .data
-// slot holding a pointer to the setting's name string IS Setting::name, and the
-// value sits one qword before it. Keying on the name rather than an address is
-// what keeps this off the per-build offset treadmill: a patch relinks the
-// object somewhere else and the scan follows it.
-constexpr uintptr_t kNameFromSettingBase = 0x10;
-constexpr uintptr_t kValueFromSettingBase = 0x08;
 
 // A field of view the engine would actually render. Used to reject a .data slot
 // that happens to hold the same pointer for some other reason.
@@ -59,34 +52,12 @@ bool ReadFloat(const float* at, float& out) {
     return false;
 }
 
-// The literal, wherever the linker put it. Searched in .rdata first because
-// that is where a string constant belongs, then .data for builds that copy it.
-const char* FindNameString(uintptr_t moduleBase, const char* name) {
-    const size_t len = std::strlen(name);
-    for (const char* section : {".rdata", ".data"}) {
-        uintptr_t start = 0;
-        size_t size = 0;
-        if (!FindSection(moduleBase, section, start, size)) continue;
-        if (size < len + 1) continue;
-        static std::atomic<uint64_t> s_faults{0};
-        __try {
-            for (size_t off = 0; off + len + 1 <= size; ++off) {
-                const char* at = reinterpret_cast<const char*>(start + off);
-                if (at[0] != name[0]) continue;
-                if (std::memcmp(at, name, len + 1) == 0) return at;
-            }
-        } __except (SehAbsorbAccessViolation(GetExceptionCode(), "fov name scan", s_faults)) {
-        }
-    }
-    return nullptr;
-}
-
 // Every .data slot pointing at the name is a candidate Setting::name. Exactly
 // one must survive the plausibility check: two would mean this is not the
 // object layout assumed here, and reading on would hand the compensation a
 // reference that is not a field of view at all.
 const float* FindSettingValue(uintptr_t moduleBase, const char* name) {
-    const char* nameString = FindNameString(moduleBase, name);
+    const char* nameString = FindSettingName(moduleBase, name);
     if (nameString == nullptr) {
         Log::Line("WARN: FOV setting '%s' has no name string in this build", name);
         return nullptr;
@@ -103,8 +74,8 @@ const float* FindSettingValue(uintptr_t moduleBase, const char* name) {
     __try {
         for (size_t off = 0; off + sizeof(uintptr_t) <= dataSize; off += 8) {
             if (*reinterpret_cast<const uintptr_t*>(dataStart + off) != wanted) continue;
-            const uintptr_t setting = dataStart + off - kNameFromSettingBase;
-            const float* value = reinterpret_cast<const float*>(setting + kValueFromSettingBase);
+            const uintptr_t setting = dataStart + off - kSettingNameOffset;
+            const float* value = reinterpret_cast<const float*>(setting + kSettingValueOffset);
             const float v = *value;
             if (!(v >= kMinPlausibleFov && v <= kMaxPlausibleFov)) continue;
             found = value;

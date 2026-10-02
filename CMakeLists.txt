@@ -59,6 +59,8 @@ set(MOD_SOURCES
     src/hooks/player_hook.cpp
     src/hooks/view_matrix_hook.cpp
     src/game/fov_settings.cpp
+    src/game/game_setting.cpp
+    src/game/weapon_debris.cpp
     src/game/game_state.cpp
     src/ui/game_window.cpp
     src/ui/notification.cpp
