@@ -552,6 +552,7 @@ bool InstallCameraHook() {
         RemoveCameraHook();
         return false;
     }
+    AdsLean::Install(gameModule);
     StartFrameVerdictReporter();
     StartPauseWatchdog();
     InstallCrosshairHook(text, moduleBase);

@@ -17,6 +17,10 @@ bool IsAiming(uintptr_t player);
 // its eye out of the first-person skeleton. False for an unreadable camera.
 bool IsFirstPersonCamera(void* camera);
 
+// Resolves what moving the skeleton needs from the game image. Without it there is
+// no rig: FirstPersonRig returns 0.
+void Install(HMODULE gameModule);
+
 // The first-person skeleton root: the transform the first-person camera's eye,
 // the arms, the held weapon and its projectile node all hang off. Only for the
 // first-person camera: in any other the rig must stay where the game puts it.
