@@ -161,7 +161,7 @@ included, and any of them can be changed or removed.
 | Toggle tracking        | `End`       | `Ctrl+Shift+Y`  |
 | Cycle tracking mode    | `Page Up`   | `Ctrl+Shift+G`  |
 | Toggle yaw mode        | `Page Down` | `Ctrl+Shift+H`  |
-| Toggle true free look  | `Insert`    | `Ctrl+Shift+U`  |
+| Cycle aim mode         | `Insert`    | `Ctrl+Shift+U`  |
 | Next tracker source    | -           | `Ctrl+Shift+J`  |
 
 `Page Up` / `Ctrl+Shift+G` cycles tracking mode:
@@ -171,7 +171,7 @@ included, and any of them can be changed or removed.
 3. Rotational tracking disabled, positional tracking enabled
 4. Back to normal
 
-The tracking mode, the yaw mode and true free look are saved to `CameraUnlock.ini`
+The tracking mode, the yaw mode and the aim mode are saved to `CameraUnlock.ini`
 the moment you change them, so the next launch starts with the same choice.
 Toggling tracking on or off with `End` lasts for the session only: each launch
 starts with tracking on or off as `EnableOnStartup` says.
@@ -181,20 +181,34 @@ starts with tracking on or off as `EnableOnStartup` says.
 Head tracking stays on while you aim. The weapon stays where your mouse or
 controller points it, so with your head turned it sits off to one side with its
 sights still lined up, and your rounds land where those sights point. Head
-movement is scaled to the zoom, so a scope does not magnify it.
+movement is scaled to the zoom, so a sight that narrows the view does not
+magnify it. Leaning in towards the screen is not scaled: it moves the view the
+same distance at any zoom.
 
-By default leaning never takes your eye off the sights. `Insert` /
-`Ctrl+Shift+U` switches to **true free look**: the weapon stays put and your
-head moves freely around it, so to see down the sights you have to put your head
-behind them, as you would in VR. It is hard, and it is off by default. The mod
-saves the mode you pick, so it holds the next time you start the game.
+`Insert` / `Ctrl+Shift+U` cycles three ways of handling a lean while you aim,
+and the mod saves the one you pick, so it holds the next time you start the
+game:
 
-Leaning carries on through the aim. As the sights come up, your arms and weapon
-move with your head when you lean to the side or up and down, so the sights stay
-in front of your eye, and your rounds leave from where your eye is. Lean round a
-corner with the sights up and you can hit what you can see from there. Leaning
-toward or away from the sights moves only the view. In third person the view
-keeps the whole lean while you aim.
+1. **Sights locked** (default) - leaning never takes your eye off the sights.
+   As the sights come up, your arms and weapon move with your head when you lean
+   to the side or up and down, so the sights stay in front of your eye, and your
+   rounds leave from where your eye is. Lean round a corner with the sights up
+   and you can hit what you can see from there.
+2. **Free look with a marker** - the lean moves only your view, and your rounds
+   leave from where the game has your body.
+3. **True free look** - the same as mode 2.
+
+In all three the weapon keeps its place on screen when you lean: the game draws
+your arms and weapon from an eye of their own, which this version of the mod
+does not move, so in modes 2 and 3 the weapon does not stay behind in the world
+as you lean away from it. The aim marker of mode 2 is not on screen in this
+version either: the mod places the game's crosshair where the round will land
+and asks for it to be shown with the sights up, and the game keeps it hidden.
+
+Leaning toward or away from the sights moves only the view in every mode. In
+third person the view keeps the whole lean while you aim.
+
+A scope that fills the screen holds the view still while you look through it.
 
 ## Configuration
 
@@ -217,6 +231,7 @@ The built-in value of each setting set to `default` below:
 - `RemoteSmoothing=0.15`
 - `PositionEnabled=true`
 - `TrueFreeLook=false`
+- `FreeLookMarker=false`
 - `PositionLimitX=0.3`
 - `PositionLimitY=0.2`
 - `PositionLimitYDown=0.2`
@@ -239,8 +254,9 @@ With every setting at its default, the file reads:
 ; that keeps its settings in CameraUnlock.ini reads: %AppData%\CameraUnlock\Defaults.ini on
 ; Windows, $XDG_CONFIG_HOME/CameraUnlock/Defaults.ini (normally ~/.config/CameraUnlock) on
 ; Linux, under Wine and Proton too, and ~/Library/Application Support/CameraUnlock/Defaults.ini
-; on macOS. The log names the file it read. Write a value instead of default to change that
-; setting for this game only.
+; on macOS. The log names the file it read. Change a setting in Defaults.ini to change it in
+; every game that has it set to default, or write a value here instead of default to change it
+; for this game only.
 
 [CameraUnlock]
 ; Written by the mod. Leave this section in place.
@@ -275,6 +291,9 @@ PositionEnabled=default
 ; false: while you aim down the sights, leaning keeps your eye on the sights.
 ; true: the weapon stays put and your head moves freely around it (true free look).
 TrueFreeLook=default
+; true, with TrueFreeLook=true: an aim marker shows where your shot will land while you aim down the sights.
+; It does nothing while TrueFreeLook is false.
+FreeLookMarker=default
 ; How far, in metres, leaning left or right can move the view.
 PositionLimitX=default
 ; How far, in metres, raising your head can move the view.
@@ -286,6 +305,7 @@ PositionLimitZ=default
 ; How far, in metres, leaning back can move the view.
 PositionLimitZBack=default
 ; true: leaning stops at walls instead of moving the view through them.
+; Only games whose mod sweeps the level for walls read this; the rest ignore it.
 CollisionEnabled=default
 ; How far the view is held off a wall when you lean into it, in the game's own units.
 CollisionMargin=10.0
@@ -302,7 +322,7 @@ ToggleKey=default
 CycleTrackingModeKey=default
 ; Switches yaw between the world's up axis and the camera's own (WorldSpaceYaw).
 YawModeKey=default
-; Switches between keeping your eye on the sights and true free look (TrueFreeLook).
+; Cycles the aim mode: sights locked, free look with a marker, true free look (TrueFreeLook, FreeLookMarker).
 TrueFreeLookKey=default
 ; Switches to the next tracker app when more than one sends to the UDP port.
 CycleTrackerSourceKey=Ctrl+Shift+J

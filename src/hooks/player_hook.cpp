@@ -51,13 +51,6 @@ float Length3(const NiPoint3& a, const NiPoint3& b) {
 SavedCameraState g_heldState{};
 std::atomic<float> g_leanScale{1.0f};
 
-// The true free look shift on the first-person skeleton, and where the root
-// stood once it was applied. The engine rebuilds the skeleton every frame, so a
-// root anywhere else means the shift is already gone and there is nothing to
-// take off.
-uintptr_t g_weaponRig = 0;
-NiPoint3 g_weaponShift{};
-NiPoint3 g_weaponRootAfter{};
 CameraRootSnapshots g_heldSnapshot{};
 bool g_renderPoseHeld = false;
 OverrideReference g_heldReference{};
@@ -364,9 +357,7 @@ void __fastcall PlayerUpdateHook(void* thisPlayer, float deltaTime) {
     g_playerActor.store(thisPlayer, std::memory_order_relaxed);
     BeginCleanCameraScope();
     __try {
-        // Animation must not consume last frame's presentation offsets or
-        // rebuild only part of the skeleton before those offsets are removed.
-        ClearWeaponShift();
+        // Animation must not consume last frame's lean on the skeleton.
         AdsLean::CarryOnRig(AdsLean::FirstPersonRig(reinterpret_cast<uintptr_t>(thisPlayer)),
                             NiPoint3());
         g_originalUpdate(thisPlayer, deltaTime);
@@ -387,18 +378,7 @@ float LeanScale() { return g_leanScale.load(std::memory_order_relaxed); }
 
 NiPoint3 HeldCameraOffset() { return g_heldState.cameraOffset; }
 
-void NoteWeaponShift(uintptr_t rig, const NiPoint3& world) {
-    g_weaponRig = rig;
-    g_weaponShift = world;
-    g_weaponRootAfter = NiPoint3();
-    if (rig == 0) return;
-    static std::atomic<uint64_t> s_faults{0};
-    __try {
-        g_weaponRootAfter = *WorldTranslationOf(rig);
-    } __except (SehAbsorbAccessViolation(GetExceptionCode(), "weapon shift note", s_faults)) {
-        g_weaponRig = 0;
-    }
-}
+NiPoint3 HeldCleanEye() { return g_heldState.niCamWorldPosition; }
 
 bool IsPlayerActor(void* actor) {
     return actor != nullptr && actor == g_playerActor.load(std::memory_order_relaxed);
@@ -576,35 +556,11 @@ thread_local int t_aimScopeDepth = 0;
 thread_local NiMatrix33 t_aimSavedRotation{};
 thread_local NiPoint3 t_aimSavedPosition{};
 thread_local bool t_aimSwapped = false;
-thread_local bool t_weaponUnshifted = false;
-
-bool WeaponShiftStillOn() {
-    if (g_weaponRig == 0 || (g_weaponShift.x == 0.0f && g_weaponShift.y == 0.0f && g_weaponShift.z == 0.0f)) {
-        return false;
-    }
-    static std::atomic<uint64_t> s_faults{0};
-    __try {
-        const NiPoint3* root = WorldTranslationOf(g_weaponRig);
-        return root->x == g_weaponRootAfter.x && root->y == g_weaponRootAfter.y && root->z == g_weaponRootAfter.z;
-    } __except (SehAbsorbAccessViolation(GetExceptionCode(), "weapon shift check", s_faults)) {
-    }
-    return false;
-}
-
-void ClearWeaponShift() {
-    if (WeaponShiftStillOn()) {
-        AdsLean::ShiftWeapon(g_weaponRig, NiPoint3(-g_weaponShift.x, -g_weaponShift.y, -g_weaponShift.z));
-    }
-    NoteWeaponShift(0, NiPoint3());
-}
-
 void BeginAimCleanScope() {
     g_cameraMutationMutex.lock();
     ++t_cleanScopeDepth;
     if (t_aimScopeDepth++ != 0) return;      // already clean for an outer aim scope
     t_aimSwapped = false;
-    t_weaponUnshifted = WeaponShiftStillOn() &&
-        AdsLean::ShiftWeapon(g_weaponRig, NiPoint3(-g_weaponShift.x, -g_weaponShift.y, -g_weaponShift.z));
     if (!g_renderPoseHeld || !g_heldState.valid || g_heldSnapshot.niCamera == 0) return;
 
     static std::atomic<uint64_t> s_faults{0};
@@ -621,12 +577,6 @@ void BeginAimCleanScope() {
 }
 
 void EndAimCleanScope() {
-    if (t_aimScopeDepth == 1 && t_weaponUnshifted) {
-        // Re-noted rather than assumed: the float round trip need not land on
-        // the same bits, and the next shot compares them exactly.
-        if (AdsLean::ShiftWeapon(g_weaponRig, g_weaponShift)) NoteWeaponShift(g_weaponRig, g_weaponShift);
-        t_weaponUnshifted = false;
-    }
     if (--t_aimScopeDepth == 0 && t_aimSwapped) {
         static std::atomic<uint64_t> s_faults{0};
         __try {

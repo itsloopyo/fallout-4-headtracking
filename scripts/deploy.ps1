@@ -41,7 +41,7 @@ Write-DeploymentSuccess `
         "End       - Toggle head tracking on/off",
         "Page Up   - Cycle tracking mode (full / rotation-only / position-only)",
         "Page Down - Toggle yaw mode (world / local)",
-        "Insert    - Toggle true free look (sights locked / true free look)",
+        "Insert    - Cycle aim mode (sights locked / free look with marker / true free look)",
         "",
-        "No nav cluster? Chords: Ctrl+Shift+ Y=Toggle G=Mode H=Yaw U=Free look J=Next tracker"
+        "No nav cluster? Chords: Ctrl+Shift+ Y=Toggle G=Mode H=Yaw U=Aim mode J=Next tracker"
     )

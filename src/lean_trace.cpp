@@ -42,6 +42,11 @@ constexpr uint64_t kSampleReportMs = 5000;
 
 struct QueryContext { void* cell; float margin; int channel; };
 
+// The collision layer the game's projectiles are on.
+constexpr int kProjectileChannel = 6;
+
+struct RayResult { bool queried; bool hit; float fraction; float cosine; };
+
 template<class T> T& Field(PickData& data, size_t offset) {
     return *reinterpret_cast<T*>(data.bytes + offset);
 }
@@ -54,6 +59,36 @@ void ReleaseWorld(PickData& data) {
         const auto vtable = *reinterpret_cast<uintptr_t**>(world);
         reinterpret_cast<void (*)(void*)>(vtable[3])(reinterpret_cast<void*>(world));
     }
+}
+
+RayResult CastRay(void* cell, const NiPoint3& from, const NiPoint3& to, const cameraunlock::math::Vec3& direction,
+                  int channel) {
+    if (!g_construct || !g_setRay || !g_pick || !cell) return {};
+    PickData data{};
+    g_construct(&data);
+    g_setRay(&data, &from, &to);
+    Field<uint32_t>(data, 0xC) = static_cast<uint32_t>(channel);
+    // Render-only queries neither consume the gameplay pick budget nor skip when it is spent.
+    data.bytes[0xDC] = 0;
+    data.bytes[0xDD] = 0;
+    g_pick(cell, &data);
+    RayResult result;
+    result.queried = Field<uintptr_t>(data, 0xC0) != 0 && data.bytes[0xDE] == 0;
+    result.hit = Field<uint32_t>(data, 0xBC) != 0;
+    result.fraction = Field<float>(data, 0x80) / Field<float>(data, 0x3C);
+    result.cosine = direction.x * Field<float>(data, 0x70) +
+        direction.y * Field<float>(data, 0x74) + direction.z * Field<float>(data, 0x78);
+    ReleaseWorld(data);
+    if (result.hit && (!std::isfinite(result.fraction) || !std::isfinite(result.cosine) || result.fraction < 0 ||
+                       result.fraction > 1)) {
+        result.queried = false;
+    }
+    return result;
+}
+
+void* PlayerCell() {
+    void* player = PlayerActor();
+    return player ? *reinterpret_cast<void**>(static_cast<unsigned char*>(player) + 0xB8) : nullptr;
 }
 }
 
@@ -107,28 +142,23 @@ cameraunlock::camera::LeanObstruction Query(void* context,
     const cameraunlock::math::Vec3& start, const cameraunlock::math::Vec3& direction,
     float maxDistance) {
     const auto& query = *static_cast<QueryContext*>(context);
-    if (!g_construct || !g_setRay || !g_pick || !query.cell) return {};
     // Overreach for glancing approaches, with the same cosine floor as the standoff.
     const float range = CollisionTraceRange(maxDistance, query.margin);
     const NiPoint3 from(start.x, start.y, start.z);
     const NiPoint3 to(start.x + direction.x * range, start.y + direction.y * range,
                      start.z + direction.z * range);
-    PickData data{};
-    g_construct(&data);
-    g_setRay(&data, &from, &to);
-    Field<uint32_t>(data, 0xC) = static_cast<uint32_t>(query.channel);
-    // Render-only queries neither consume the gameplay pick budget nor skip when it is spent.
-    data.bytes[0xDC] = 0;
-    data.bytes[0xDD] = 0;
-    g_pick(query.cell, &data);
-    const bool queried = Field<uintptr_t>(data, 0xC0) != 0 && data.bytes[0xDE] == 0;
-    const bool hit = Field<uint32_t>(data, 0xBC) != 0;
-    const float fraction = Field<float>(data, 0x80) / Field<float>(data, 0x3C);
-    const float cosine = direction.x * Field<float>(data, 0x70) +
-        direction.y * Field<float>(data, 0x74) + direction.z * Field<float>(data, 0x78);
-    ReleaseWorld(data);
-    if (!queried || (hit && (!std::isfinite(fraction) || !std::isfinite(cosine) || fraction < 0 || fraction > 1))) return {};
-    return {true, hit, hit ? CollisionHitAllowance(fraction * range, query.margin, cosine) : 0};
+    const RayResult ray = CastRay(query.cell, from, to, direction, query.channel);
+    if (!ray.queried) return {};
+    return {true, ray.hit, ray.hit ? CollisionHitAllowance(ray.fraction * range, query.margin, ray.cosine) : 0};
+}
+
+bool AimRayHit(const NiPoint3& start, const NiPoint3& direction, float range, float& distance) {
+    const NiPoint3 to(start.x + direction.x * range, start.y + direction.y * range, start.z + direction.z * range);
+    const RayResult ray = CastRay(PlayerCell(), start, to,
+                                  cameraunlock::math::Vec3(direction.x, direction.y, direction.z), kProjectileChannel);
+    if (!ray.queried || !ray.hit) return false;
+    distance = ray.fraction * range;
+    return true;
 }
 
 void Reset() {
@@ -143,8 +173,7 @@ float Clamp(const NiPoint3& eye, const NiPoint3& offset, uintptr_t camera,
             uintptr_t state, float nearPlane, uint64_t tick, float deltaTime) {
     const auto& config = Mod::Instance().Settings();
     if (!config.collision_enabled) { Reset(); return 1.0f; }
-    void* player = PlayerActor();
-    void* cell = player ? *reinterpret_cast<void**>(static_cast<unsigned char*>(player) + 0xB8) : nullptr;
+    void* cell = PlayerCell();
     const cameraunlock::math::Vec3 clean(eye.x, eye.y, eye.z);
     const cameraunlock::math::Vec3 desired(offset.x, offset.y, offset.z);
     auto settings = config.lean_clamp;

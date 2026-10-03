@@ -27,14 +27,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - With these settings at their shipped defaults the camera moves as it did before.
 
 ### Added
-- `[Hotkeys] CycleTrackerSourceKey` in `CameraUnlock.ini`, the key list that switches to the next tracker app. It starts at `Ctrl+Shift+J` and can be changed or removed. `Ctrl+Shift+U`, the chord that did this before, now toggles true free look.
-- True free look, off by default, toggled with `Insert` / `Ctrl+Shift+U` (`[Hotkeys] TrueFreeLookKey`) and saved to `[Position] TrueFreeLook` in `CameraUnlock.ini` each time you press it. With it on, the weapon stays put in the world while you lean and your head moves freely around it. Switching slides the weapon between the two rather than jumping.
+- `[Hotkeys] CycleTrackerSourceKey` in `CameraUnlock.ini`, the key list that switches to the next tracker app. It starts at `Ctrl+Shift+J` and can be changed or removed. `Ctrl+Shift+U`, the chord that did this before, now cycles the aim mode.
+- `Insert` / `Ctrl+Shift+U` (`[Hotkeys] TrueFreeLookKey`) cycles three aim modes: sights locked, free look with a marker and true free look. The choice is saved to `[Position] TrueFreeLook` and the new `[Position] FreeLookMarker` in `CameraUnlock.ini` each time you press it. In the two free look modes the lean stays on your view through the aim and your rounds leave from where the game has your body. The weapon keeps its place on screen in every mode, and the marker of free look with a marker is not on screen yet.
 - Leaning stops at walls instead of moving the view through them: `[Position] CollisionEnabled` (on by default), `CollisionMargin`, `CollisionChannel` and `CollisionReleaseSmoothing` in `CameraUnlock.ini`. Settings imported from `HeadTracking.ini` leave `CollisionEnabled` and `CollisionReleaseSmoothing` to `Defaults.ini`.
 - A setting set to `default` in `CameraUnlock.ini` takes its value from `Defaults.ini`, which every head tracking mod that keeps its settings in `CameraUnlock.ini` reads. Head tracking mods that keep their settings in another file do not read it, and neither do earlier versions of this mod. Writing a value in place of `default` changes that setting for this game only. When the mod saves a setting that a hotkey changed in game, it writes the new value in place of `default`, so that setting no longer follows `Defaults.ini` in this game until you set it to `default` again.
 - `Defaults.ini` is `%AppData%\CameraUnlock\Defaults.ini` on Windows; `$XDG_CONFIG_HOME/CameraUnlock/Defaults.ini` on Linux, or `~/.config/CameraUnlock/Defaults.ini` where `XDG_CONFIG_HOME` is not set, under Wine and Proton too; and `~/Library/Application Support/CameraUnlock/Defaults.ini` on macOS. The mod's log, where it writes one, names the file it read.
 - When the mod starts and finds no `Defaults.ini`, it creates one holding the built-in values, unless Windows runs the game as a packaged app. The mod never changes `Defaults.ini` after that.
 
 ### Fixed
+- Head movement is now scaled to the zoom on saves where the game's first-person view rests slightly narrower than the field of view you set. On those saves the mod never found its un-zoomed reference, so a head turn swept the picture further through the sights than at the hip.
+- Leaning in towards the screen is no longer scaled down by the zoom. Through a sight that narrows the view, leaning sideways and up and down is scaled like a head turn, and leaning in moves the view the full distance.
 - Head tracking moves the view by the same amount on screen whatever the game
   is doing with its field of view. Down a scope or through iron sights the view
   is drawn much narrower, which magnified head tracking along with everything

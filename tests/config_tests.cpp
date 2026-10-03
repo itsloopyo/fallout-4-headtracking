@@ -9,6 +9,7 @@
 
 #include "core/config.h"
 
+#include <cameraunlock/ads/aim_mode.h>
 #include <cameraunlock/config/config_owner.h>
 #include <cameraunlock/config/defaults_file.h>
 #include <cameraunlock/input/key_bindings.h>
@@ -24,6 +25,7 @@
 #include <vector>
 
 namespace cfg = cameraunlock::config;
+using cameraunlock::ads::AimMode;
 using Fallout4HT::Config;
 
 namespace {
@@ -120,7 +122,7 @@ void EveryHotkeyDefaultParses() {
     Check(defaults.yaw_mode_key_name == "PageDown, Ctrl+Shift+H", "YawModeKey is the fleet's default");
     Check(defaults.true_free_look_key_name == "Insert, Ctrl+Shift+U", "TrueFreeLookKey is the fleet's default");
     Check(defaults.cycle_tracker_source_key_name == "Ctrl+Shift+J",
-          "CycleTrackerSourceKey moved off Ctrl+Shift+U, which is true free look's");
+          "CycleTrackerSourceKey moved off Ctrl+Shift+U, which is the aim mode cycle's");
 }
 
 void FirstLaunchCreatesTheCommittedFile() {
@@ -161,19 +163,35 @@ void CollisionSettingsFollowDefaultsAndKeepEngineUnits() {
           "legacy imports inherit the new collision settings from Defaults.ini");
 }
 
-void TrueFreeLookStartsOff() {
-    std::printf("true free look is off by default, and an old ads_mode line is not read\n");
-    const Config defaults = Fallout4HT::MakeConfigTable().defaults();
-    Check(!defaults.true_free_look, "TrueFreeLook defaults to false");
-
-    // tracked was never free look, so the retired cycle's key maps onto nothing.
-    const Scratch s = MakeScratch(L"ads-mode");
+AimMode LoadedAimMode(const wchar_t* name, const char* position) {
+    const Scratch s = MakeScratch(name);
     WriteBytes(s.folder + Fallout4HT::kConfigFileName,
-               "[CameraUnlock]\r\nConfigFormat=1\r\n[Position]\r\nads_mode=tracked\r\n");
+               std::string("[CameraUnlock]\r\nConfigFormat=1\r\n[Position]\r\n") + position);
     cfg::ConfigOwner<Config> owner(Options(s));
     const cfg::ConfigLoadResult<Config> loaded = owner.Load();
-    Check(loaded.status == cfg::ConfigLoadStatus::Canonical, "a file holding ads_mode still loads as canonical");
-    Check(!loaded.config.true_free_look, "ads_mode=tracked leaves true free look off");
+    Check(loaded.status == cfg::ConfigLoadStatus::Canonical, "the file loads as canonical");
+    return cameraunlock::ads::DecodeAimMode(loaded.config.true_free_look, loaded.config.free_look_marker);
+}
+
+void AimModeStartsSightsLocked() {
+    std::printf("the aim mode is sights locked by default, and an old ads_mode line is not read\n");
+    const Config defaults = Fallout4HT::MakeConfigTable().defaults();
+    Check(!defaults.true_free_look, "TrueFreeLook defaults to false");
+    Check(!defaults.free_look_marker, "FreeLookMarker defaults to false");
+
+    // tracked was never free look and marker snapped the view, so the retired
+    // cycle's key maps onto nothing, whatever it holds.
+    Check(LoadedAimMode(L"ads-tracked", "ads_mode=tracked\r\n") == AimMode::SightsLocked, "ads_mode=tracked");
+    Check(LoadedAimMode(L"ads-marker", "ads_mode=marker\r\n") == AimMode::SightsLocked, "ads_mode=marker");
+    Check(LoadedAimMode(L"ads-paused", "ads_mode=paused\r\n") == AimMode::SightsLocked, "ads_mode=paused");
+    Check(LoadedAimMode(L"neither", "TrueFreeLook=false\r\nFreeLookMarker=false\r\n") == AimMode::SightsLocked,
+          "both false is sights locked");
+    Check(LoadedAimMode(L"before-marker", "TrueFreeLook=true\r\n") == AimMode::TrueFreeLook,
+          "a config from before the marker, with TrueFreeLook alone, is true free look");
+    Check(LoadedAimMode(L"marker-alone", "FreeLookMarker=true\r\n") == AimMode::SightsLocked,
+          "FreeLookMarker alone is sights locked");
+    Check(LoadedAimMode(L"both", "TrueFreeLook=true\r\nFreeLookMarker=true\r\n") == AimMode::FreeLookMarker,
+          "both true is free look with a marker");
 }
 
 void TogglesSaveTheirRowsOnly() {
@@ -212,19 +230,36 @@ void TogglesSaveTheirRowsOnly() {
     }
     Check(threw, "EnableOnStartup is not Writable: End never persists");
 
-    const std::string beforeFreeLook = ReadBytes(path);
-    const cfg::ConfigSaveResult freeLook = owner.Save([](Config& c) { c.true_free_look = true; });
-    Check(freeLook.status == cfg::ConfigSaveStatus::Saved, "the true free look save is Saved");
-    const std::vector<std::string> freeLookLines = ChangedLines(beforeFreeLook, ReadBytes(path));
-    Check(freeLookLines.size() == 1 && freeLookLines[0] == "TrueFreeLook=true",
-          "only TrueFreeLook=default became true");
+    // The aim mode cycle, as the hotkey runs it: each press is one save of the pair,
+    // and a restart comes back in the mode last chosen, from each of the three.
+    AimMode aim = AimMode::SightsLocked;
+    const std::vector<std::string> expected[] = {
+        {"TrueFreeLook=true", "FreeLookMarker=true"},
+        {"FreeLookMarker=false"},
+        {"TrueFreeLook=false"},
+    };
+    const AimMode order[] = {AimMode::FreeLookMarker, AimMode::TrueFreeLook, AimMode::SightsLocked};
+    for (int press = 0; press < 3; ++press) {
+        aim = cameraunlock::ads::NextAimMode(aim);
+        Check(aim == order[press], "the cycle goes sights locked, free look with a marker, true free look");
+        const std::string before = ReadBytes(path);
+        const cameraunlock::ads::AimModePair pair = cameraunlock::ads::EncodeAimMode(aim);
+        const cfg::ConfigSaveResult saved = owner.Save([pair](Config& c) {
+            c.true_free_look = pair.trueFreeLook;
+            c.free_look_marker = pair.freeLookMarker;
+        });
+        Check(saved.status == cfg::ConfigSaveStatus::Saved, "the aim mode save is Saved");
+        Check(ChangedLines(before, ReadBytes(path)) == expected[press],
+              "a press writes the aim mode pair and no other line");
 
-    cfg::ConfigOwner<Config> again(Options(s));
-    const cfg::ConfigLoadResult<Config> reread = again.Load();
-    Check(reread.status == cfg::ConfigLoadStatus::Canonical, "the saved file reads back as canonical");
-    Check(!reread.config.world_space_yaw, "the yaw choice survives a restart");
-    Check(reread.config.rotation_enabled && !reread.config.position_enabled, "the mode survives a restart");
-    Check(reread.config.true_free_look, "true free look survives a restart");
+        cfg::ConfigOwner<Config> restarted(Options(s));
+        const cfg::ConfigLoadResult<Config> reread = restarted.Load();
+        Check(reread.status == cfg::ConfigLoadStatus::Canonical, "the saved file reads back as canonical");
+        Check(cameraunlock::ads::DecodeAimMode(reread.config.true_free_look, reread.config.free_look_marker) == aim,
+              "a restart comes back in the mode last chosen");
+        Check(!reread.config.world_space_yaw, "the yaw choice survives a restart");
+        Check(reread.config.rotation_enabled && !reread.config.position_enabled, "the mode survives a restart");
+    }
 }
 
 }  // namespace
@@ -243,7 +278,7 @@ int main(int argc, char** argv) {
         EveryHotkeyDefaultParses();
         FirstLaunchCreatesTheCommittedFile();
         CollisionSettingsFollowDefaultsAndKeepEngineUnits();
-        TrueFreeLookStartsOff();
+        AimModeStartsSightsLocked();
         TogglesSaveTheirRowsOnly();
     } catch (const std::exception& e) {
         std::printf("FAIL: %s\n", e.what());

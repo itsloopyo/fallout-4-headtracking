@@ -27,12 +27,12 @@ struct Config : cameraunlock::HeadTrackingConfig {
         lean_clamp.skin = 10.0f;
     }
     bool show_notifications = true;
-    // Ctrl+Shift+U, the chord earlier builds used, is true free look's in every shooter.
+    // Ctrl+Shift+U, the chord earlier builds used, is the aim mode cycle's in every shooter.
     std::string cycle_tracker_source_key_name = "Ctrl+Shift+J";
 };
 
-// The rows of CameraUnlock.ini. Only the tracking mode pair, WorldSpaceYaw and TrueFreeLook are
-// Writable: their hotkeys save the player's choice, and End changes the session only.
+// The rows of CameraUnlock.ini. Only the tracking mode pair, WorldSpaceYaw and the aim mode pair
+// (TrueFreeLook, FreeLookMarker) are Writable: their hotkeys save the player's choice, and End changes the session only.
 cameraunlock::config::ConfigTable<Config> MakeConfigTable();
 
 // HeadTracking.ini as the builds before the canonical format read it (legacy_config/), mapped

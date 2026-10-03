@@ -5,6 +5,7 @@
 #include "logging.h"
 #include "path_utils.h"
 #include "session_end.h"
+#include "diagnostics/isolated_input.h"
 #include "game/weapon_debris.h"
 #include "hooks/camera_hook.h"
 #include "ui/notification.h"
@@ -208,8 +209,8 @@ void Mod::ConfigureSession() {
     m_worldSpaceYaw.store(m_config.world_space_yaw);
     Log::Line("Yaw mode: %s", m_worldSpaceYaw.load() ? "horizon-locked (world)" : "camera-local");
 
-    m_trueFreeLook.store(m_config.true_free_look);
-    Log::Line("Aim mode: %s", m_trueFreeLook.load() ? "true free look" : "sights locked");
+    m_aimMode.store(cameraunlock::ads::DecodeAimMode(m_config.true_free_look, m_config.free_look_marker));
+    Log::Line("%s", cameraunlock::ads::AimModeLabel(m_aimMode.load()));
 
     // The table reads a pair that names no mode as its defaults, so every
     // loaded pair decodes.
@@ -251,6 +252,9 @@ bool Mod::InitializeHooks() {
         Log::Line("WARN: Camera hook failed - head tracking disabled");
     }
 
+#if FALLOUT4_DEV_HOTKEYS
+    StartIsolatedInputIfAsked();
+#endif
     if (!m_hotkeys.Start(m_config)) {
         Log::Line("WARN: Hotkey setup failed - hotkeys won't work");
     }
@@ -370,14 +374,18 @@ void Mod::ToggleYawMode() {
     SaveConfig([newValue](Config& c) { c.world_space_yaw = newValue; });
 }
 
-void Mod::ToggleTrueFreeLook() {
-    const bool newValue = !m_trueFreeLook.load();
-    m_trueFreeLook.store(newValue);
+void Mod::CycleAimMode() {
+    const cameraunlock::ads::AimMode mode = cameraunlock::ads::NextAimMode(m_aimMode.load());
+    m_aimMode.store(mode);
 
-    Log::Line("Aim mode: %s", newValue ? "true free look" : "sights locked");
-    Notify(newValue ? "True free look: ON" : "True free look: OFF (sights locked)");
+    Log::Line("%s", cameraunlock::ads::AimModeLabel(mode));
+    Notify(cameraunlock::ads::AimModeLabel(mode));
 
-    SaveConfig([newValue](Config& c) { c.true_free_look = newValue; });
+    const cameraunlock::ads::AimModePair pair = cameraunlock::ads::EncodeAimMode(mode);
+    SaveConfig([pair](Config& c) {
+        c.true_free_look = pair.trueFreeLook;
+        c.free_look_marker = pair.freeLookMarker;
+    });
 }
 
 void Mod::CycleTrackerSource() {

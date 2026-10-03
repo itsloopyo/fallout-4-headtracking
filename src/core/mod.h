@@ -5,6 +5,7 @@
 #include "config.h"
 #include "hotkeys.h"
 
+#include <cameraunlock/ads/aim_mode.h>
 #include <cameraunlock/config/config_owner.h>
 #include <cameraunlock/protocol/udp_receiver.h>
 #include <cameraunlock/time/frame_clock.h>
@@ -40,10 +41,12 @@ public:
     bool IsPositionActive() const { return m_session.IsPositionActive(); }
     void ToggleYawMode();
 
-    // Sights locked (false) or true free look (true): what a lean does to the eye
-    // and the weapon while the sights are up. Saved to CameraUnlock.ini on each press.
-    void ToggleTrueFreeLook();
-    bool IsTrueFreeLook() const { return m_trueFreeLook.load(); }
+    // Sights locked, free look with a marker, true free look: what a lean does to
+    // the eye and the weapon while the sights are up, and whether the aim marker
+    // is drawn. Saved to CameraUnlock.ini on each press.
+    void CycleAimMode();
+    cameraunlock::ads::AimMode GetAimMode() const { return m_aimMode.load(); }
+    bool IsTrueFreeLook() const { return GetAimMode() != cameraunlock::ads::AimMode::SightsLocked; }
 
     // Step to a different tracker app when more than one is sending to the port.
     void CycleTrackerSource();
@@ -154,7 +157,7 @@ private:
     // Yaw mode: true = horizon-locked (world), false = camera-local
     std::atomic<bool> m_worldSpaceYaw{true};
 
-    std::atomic<bool> m_trueFreeLook{false};
+    std::atomic<cameraunlock::ads::AimMode> m_aimMode{cameraunlock::ads::AimMode::SightsLocked};
 
     std::atomic<AxisIsolation> m_axisIsolation{AxisIsolation::None};
 

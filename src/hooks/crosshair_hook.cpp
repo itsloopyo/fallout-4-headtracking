@@ -50,6 +50,8 @@ constexpr uintptr_t kScopePending = 0xF0;
 constexpr uintptr_t kScopeFlags = 0x1C4;
 constexpr uint16_t kDisplayInfoX = 0x01;
 constexpr uint16_t kDisplayInfoY = 0x02;
+constexpr uint16_t kDisplayInfoAlpha = 0x20;
+constexpr uint16_t kDisplayInfoVisible = 0x40;
 
 // Indices into a DisplayInfo, whose layout is {X, Y, Rotation, XScale, YScale,
 // Alpha} as doubles.
@@ -57,6 +59,10 @@ constexpr int kDisplayInfoIndexX = 0;
 constexpr int kDisplayInfoIndexY = 1;
 constexpr int kDisplayInfoIndexXScale = 3;
 constexpr int kDisplayInfoIndexYScale = 4;
+constexpr int kDisplayInfoIndexAlpha = 5;
+// The Visible flag follows the six doubles.
+constexpr uintptr_t kDisplayInfoVisibleOffset = 0x30;
+constexpr double kOpaque = 100.0;
 
 // The game's own callers give this scope a 0x1D0-byte stack local (the
 // decompiler renders it `undefined1 local_228 [464]`). This is that with room to
@@ -79,11 +85,59 @@ bool g_horizontalScaleCapped = true;
 // offset through Scaleform on every crosshair tick for the whole session.
 bool g_crosshairMoved = false;
 
+std::mutex g_markerMutex;
+AimMarkerState g_marker{};
+
+AimMarkerState LatestAimMarker() {
+    std::lock_guard<std::mutex> lock(g_markerMutex);
+    return g_marker;
+}
+
+// What the HUD last left on the crosshair, and what was written over it to hold
+// the marker up. The HUD sets the crosshair's alpha when its own state changes,
+// not every frame, so a value read back equal to the last one written is still
+// ours and the HUD's own is the one remembered from before.
+struct MarkerHold {
+    bool held;
+    double hudAlpha;
+    bool hudVisible;
+    double writtenAlpha;
+};
+MarkerHold g_markerHold{};
+
+// Stage the alpha and visibility that show the crosshair at `opacity` (0..1), or
+// hand both back to the HUD at 0.
+void StageMarkerAlpha(uint8_t* scope, float opacity) {
+    const double* current = reinterpret_cast<const double*>(scope + kScopeCurrent);
+    const double alpha = current[kDisplayInfoIndexAlpha];
+    const bool visible = *(scope + kScopeCurrent + kDisplayInfoVisibleOffset) != 0;
+    if (!g_markerHold.held) {
+        if (opacity <= 0.0f) return;
+        g_markerHold = MarkerHold{true, alpha, visible, alpha};
+        Log::Line("aim marker: crosshair held up (the HUD had it at alpha %.0f, %s)", alpha,
+                  visible ? "visible" : "hidden");
+    } else if (alpha != g_markerHold.writtenAlpha) {
+        g_markerHold.hudAlpha = alpha;
+    }
+
+    const double wanted = static_cast<double>(opacity) * kOpaque;
+    const double target = wanted > g_markerHold.hudAlpha ? wanted : g_markerHold.hudAlpha;
+    double* pending = reinterpret_cast<double*>(scope + kScopePending);
+    pending[kDisplayInfoIndexAlpha] = target;
+    *(scope + kScopePending + kDisplayInfoVisibleOffset) = (opacity > 0.0f || g_markerHold.hudVisible) ? 1 : 0;
+    *reinterpret_cast<uint16_t*>(scope + kScopeFlags) |= (kDisplayInfoAlpha | kDisplayInfoVisible);
+    g_markerHold.writtenAlpha = target;
+    if (opacity <= 0.0f) {
+        g_markerHold.held = false;
+        Log::Line("aim marker: crosshair handed back to the HUD");
+    }
+}
+
 // Read the clip's authored position out of an initialised scope, and stage the
 // offset we want. Only our own accesses to the scope buffer are guarded; the two
 // Scaleform calls that bracket this sit outside, where a fault of theirs belongs
 // to the game. Returns false if the scope could not be read.
-bool StageCrosshairOffset(uint8_t* scope, double dx, double dy,
+bool StageCrosshairOffset(uint8_t* scope, double dx, double dy, float markerOpacity,
                           std::atomic<uint64_t>& faults) {
     __try {
         const double* current = reinterpret_cast<const double*>(scope + kScopeCurrent);
@@ -118,13 +172,15 @@ bool StageCrosshairOffset(uint8_t* scope, double dx, double dy,
         pending[kDisplayInfoIndexX] = g_clipBaseX + dx;
         pending[kDisplayInfoIndexY] = g_clipBaseY + dy;
         *reinterpret_cast<uint16_t*>(scope + kScopeFlags) |= (kDisplayInfoX | kDisplayInfoY);
+        StageMarkerAlpha(scope, markerOpacity);
         return true;
     } __except (SehAbsorbAccessViolation(GetExceptionCode(), "crosshair scope", faults)) {
     }
     return false;
 }
 
-bool MoveCrosshair(void* crosshair, double dx, double dy, std::atomic<uint64_t>& faults) {
+bool MoveCrosshair(void* crosshair, double dx, double dy, float markerOpacity,
+                   std::atomic<uint64_t>& faults) {
     void* target = reinterpret_cast<void*>(
         reinterpret_cast<uintptr_t>(crosshair) + kHUDCrosshair_BaseClip);
 
@@ -132,7 +188,7 @@ bool MoveCrosshair(void* crosshair, double dx, double dy, std::atomic<uint64_t>&
     std::memset(scope, 0, sizeof(scope));
     g_gfxScopeInit(scope, target);
 
-    if (!StageCrosshairOffset(scope, dx, dy, faults)) return false;
+    if (!StageCrosshairOffset(scope, dx, dy, markerOpacity, faults)) return false;
     g_gfxScopeApply(scope);
     return true;
 }
@@ -185,20 +241,27 @@ void __fastcall HUDCrosshairUpdateHook(void* thisCrosshair) {
     const double viewportAspect = GetViewportAspect();
     ReportAspectOnce(snap, viewportAspect);
 
+    // The marker sits on the impact point; the crosshair at the hip on the aim
+    // direction. The two meet through the marker's own fade, so the crosshair
+    // slides onto the impact point as it comes up rather than stepping.
+    const AimMarkerState marker = haveSnap && snap.aimValid ? LatestAimMarker() : AimMarkerState{};
+    const float aimNdcX = snap.aimNdcX + (marker.ndcX - snap.aimNdcX) * marker.opacity;
+    const float aimNdcY = snap.aimNdcY + (marker.ndcY - snap.aimNdcY) * marker.opacity;
+
     const CrosshairStageOffset offset = AbSwitches::StageRulerEnabled()
         ? StageRulerOffset()
         : (AbSwitches::CrosshairMoveEnabled()
-               ? ComputeCrosshairStageOffset(haveSnap, snap.aimValid, snap.aimNdcX, snap.aimNdcY,
+               ? ComputeCrosshairStageOffset(haveSnap, snap.aimValid, aimNdcX, aimNdcY,
                                              viewportAspect, g_horizontalScaleCapped)
                : CrosshairStageOffset{});
 
     const bool wantMoved = (offset.dx != 0.0 || offset.dy != 0.0);
-    if (!wantMoved && !g_crosshairMoved) return;
+    if (!wantMoved && !g_crosshairMoved && marker.opacity <= 0.0f && !g_markerHold.held) return;
 
     // Only latch the new state if the write landed, so a failed move still
     // leaves the "needs restoring" flag set.
     static std::atomic<uint64_t> s_faults{0};
-    if (MoveCrosshair(thisCrosshair, offset.dx, offset.dy, s_faults)) {
+    if (MoveCrosshair(thisCrosshair, offset.dx, offset.dy, marker.opacity, s_faults)) {
         g_crosshairMoved = wantMoved;
     }
 }
@@ -257,6 +320,11 @@ const uint8_t kCrosshairUpdatePattern110163[] = {
 };
 
 } // namespace
+
+void PublishAimMarker(const AimMarkerState& marker) {
+    std::lock_guard<std::mutex> lock(g_markerMutex);
+    g_marker = marker;
+}
 
 void InstallCrosshairHook(const TextSection& text, uintptr_t moduleBase) {
     const char* initVariant = "none";

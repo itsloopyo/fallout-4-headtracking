@@ -33,10 +33,4 @@ uintptr_t FirstPersonRig(uintptr_t player);
 // again. A second camera tick in one frame replaces the first tick's write.
 void CarryOnRig(uintptr_t rig, const NiPoint3& world);
 
-// Moves the skeleton's rendered geometry by `world` without moving the camera,
-// for true free look: run after the camera update, it leaves the weapon where it
-// is in the world while the eye moves. Returns false if the tree could not be
-// walked.
-bool ShiftWeapon(uintptr_t rig, const NiPoint3& world);
-
 }  // namespace Fallout4HT::AdsLean

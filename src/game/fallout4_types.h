@@ -222,6 +222,17 @@ namespace TESCameraOffsets {
     constexpr uintptr_t CurrentState = 0x28;
 }
 
+// --- PlayerCamera -----------------------------------------------------------
+// Its field of view, in degrees. Nothing is taken from these until
+// FovSettings has seen them account for the rendered frustum on the running
+// build.
+namespace PlayerCameraOffsets {
+    constexpr uintptr_t WorldFov = 0x168;
+    constexpr uintptr_t FirstPersonFov = 0x16C;
+    constexpr uintptr_t FovAdjustCurrent = 0x170;
+    constexpr uintptr_t FovAnimatorAdjust = 0x17C;
+}
+
 // The two scene-graph nodes head tracking writes each frame.
 struct CameraNodes {
     uintptr_t cameraRoot;

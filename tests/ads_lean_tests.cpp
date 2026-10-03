@@ -8,13 +8,16 @@
 #include "game/fallout4_types.h"
 #include "hooks/camera_math.h"
 
+#include <cameraunlock/ads/aim_mode.h>
 #include <cameraunlock/ads/lean_handover.h>
+#include <cameraunlock/camera/zoom_compensation.h>
 
 #include <cmath>
 #include <cstdio>
 #include <initializer_list>
 
 using namespace Fallout4HT;
+using cameraunlock::ads::AimMode;
 using cameraunlock::ads::LeanHandover;
 using cameraunlock::ads::LeanShares;
 using cameraunlock::math::Vec3;
@@ -259,6 +262,71 @@ void RepeatTicksReplaceTheRigWrite() {
           "a write to another skeleton is not taken back off this one");
 }
 
+// What the camera hook does with a mode: only whether it is a free look mode reaches
+// the lean, the weapon and the shares.
+bool FreeLook(AimMode mode) { return mode != AimMode::SightsLocked; }
+
+LeanShares SettledSightsUp(AimMode mode, const Vec3& lean) {
+    LeanHandover handover;
+    handover.Update(lean, kTrackerForward, false, FreeLook(mode), true, 0);
+    handover.Update(lean, kTrackerForward, true, FreeLook(mode), true, 1);
+    return handover.Update(lean, kTrackerForward, true, FreeLook(mode), true, 1 + kSettledMs);
+}
+
+void TheTwoFreeLookModesShareOneLean() {
+    std::printf("free look with a marker and true free look put the lean in the same place\n");
+    const LeanShares marker = SettledSightsUp(AimMode::FreeLookMarker, kLean);
+    const LeanShares plain = SettledSightsUp(AimMode::TrueFreeLook, kLean);
+    Check(marker.camera.x == plain.camera.x && marker.camera.y == plain.camera.y && marker.camera.z == plain.camera.z,
+          "the camera's share, which is what the aim hook and the marker are handed, is the same");
+    Check(IsZero(marker.rig) && IsZero(plain.rig), "the rig carries nothing in either");
+}
+
+void TheMarkerIsMode2WithTheSightsUp() {
+    std::printf("the aim marker is asked for only in free look with a marker, and follows the sights\n");
+    cameraunlock::ads::AdsFade sights;
+    sights.Update(false, 0);
+    bool followed = true;
+    for (unsigned long long t = 1; t <= 1 + 2 * kSettledMs; t += 7) {
+        const float sightsUp = 1.0f - sights.Update(t <= 1 + kSettledMs, t);
+        if (cameraunlock::ads::AimMarkerOpacity(AimMode::FreeLookMarker, sightsUp) != sightsUp) followed = false;
+        if (cameraunlock::ads::AimMarkerOpacity(AimMode::SightsLocked, sightsUp) != 0.0f) followed = false;
+        if (cameraunlock::ads::AimMarkerOpacity(AimMode::TrueFreeLook, sightsUp) != 0.0f) followed = false;
+    }
+    Check(followed, "its opacity is the sights' fade in mode 2 and zero in modes 1 and 3");
+    Check(cameraunlock::ads::AimMarkerOpacity(AimMode::FreeLookMarker, 0.0f) == 0.0f, "there is none at the hip");
+    Check(cameraunlock::ads::AimMarkerOpacity(AimMode::FreeLookMarker, 1.0f) == 1.0f, "it is opaque with the sights up");
+}
+
+void LeaningInIsNeverCutShortAtTheHip() {
+    std::printf("a lean in of the whole forward limit is applied in full at the hip, at any zoom\n");
+    const Vec3 in(0.0f, 0.0f, -0.4f);
+    for (const float zoom : {1.0f, 0.5f, 0.25f, 0.1f}) {
+        const Vec3 scaled = cameraunlock::camera::ScaleLeanForZoom(in, kTrackerForward, zoom);
+        for (const AimMode mode : {AimMode::SightsLocked, AimMode::FreeLookMarker, AimMode::TrueFreeLook}) {
+            LeanHandover handover;
+            const LeanShares shares = handover.Update(scaled, kTrackerForward, false, FreeLook(mode), true, 0);
+            Check(shares.camera.z == -0.4f && IsZero(shares.rig), "the camera carries all 0.4 m of it");
+        }
+    }
+}
+
+void LeaningInIsNeverCutShortWithTheSightsUp() {
+    std::printf("sights up, a lean in is applied in full, at any zoom, in every mode\n");
+    const Vec3 in(0.21f, -0.07f, -0.4f);
+    for (const float zoom : {1.0f, 0.5f, 0.25f, 0.1f}) {
+        const Vec3 scaled = cameraunlock::camera::ScaleLeanForZoom(in, kTrackerForward, zoom);
+        Check(scaled.z == in.z, "the zoom leaves the lean along the view alone");
+        Check(fabsf(scaled.x - in.x * zoom) < 1e-6f && fabsf(scaled.y - in.y * zoom) < 1e-6f,
+              "and scales the lean across it");
+        for (const AimMode mode : {AimMode::SightsLocked, AimMode::FreeLookMarker, AimMode::TrueFreeLook}) {
+            const LeanShares shares = SettledSightsUp(mode, scaled);
+            Check(shares.camera.z == -0.4f, "the camera carries all 0.4 m of the lean in");
+            Check(shares.rig.z == 0.0f, "the lean along the aim is never handed to the rig");
+        }
+    }
+}
+
 }  // namespace
 
 int main() {
@@ -274,6 +342,10 @@ int main() {
     ThirdPersonKeepsTheWholeLeanWhileAiming();
     StoppingReleasesTheRig();
     RepeatTicksReplaceTheRigWrite();
+    TheTwoFreeLookModesShareOneLean();
+    TheMarkerIsMode2WithTheSightsUp();
+    LeaningInIsNeverCutShortAtTheHip();
+    LeaningInIsNeverCutShortWithTheSightsUp();
 
     if (g_failures == 0) {
         std::printf("All tests passed!\n");

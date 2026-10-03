@@ -93,6 +93,7 @@ cameraunlock::ads::LeanShares ShareLean(cameraunlock::ads::LeanHandover& handove
 // collision clamp has tightened below what the rig carried.
 NiPoint3 CameraShareOfLean(const NiPoint3& wholeLean, const NiPoint3& rigWorld, float scale);
 
+
 // The last offset written to the first-person skeleton root, and the root's local
 // translation right after the write.
 struct RigWrite {

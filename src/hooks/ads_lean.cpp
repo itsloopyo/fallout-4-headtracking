@@ -140,7 +140,7 @@ void Install(HMODULE gameModule) {
     cameraunlock::memory::VtableInfo info{};
     if (!cameraunlock::memory::FindVtableFromRTTI(gameModule, kRTTI_FlattenedBoneTree, info, 1)) {
         Log::Line("ERROR: ADS: no BSFlattenedBoneTree RTTI - the first-person skeleton cannot carry the"
-                  " lean, so the lean eases out while aiming and true free look leaves the weapon alone");
+                  " lean, so the lean eases out while aiming");
         return;
     }
     g_flattenedBoneTreeVtable = info.vtable_address;
@@ -182,18 +182,6 @@ void CarryOnRig(uintptr_t rig, const NiPoint3& world) {
     } __except (SehAbsorbAccessViolation(GetExceptionCode(), "rig lean", s_faults)) {
         g_lastRigWrite = RigWrite{};
     }
-}
-
-bool ShiftWeapon(uintptr_t rig, const NiPoint3& world) {
-    if (rig == 0) return false;
-    static std::atomic<uint64_t> s_faults{0};
-    __try {
-        int visited = 0;
-        ShiftTree(rig, world, 0, visited);
-        return true;
-    } __except (SehAbsorbAccessViolation(GetExceptionCode(), "weapon shift", s_faults)) {
-    }
-    return false;
 }
 
 }  // namespace Fallout4HT::AdsLean

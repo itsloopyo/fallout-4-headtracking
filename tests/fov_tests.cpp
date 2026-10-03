@@ -3,7 +3,7 @@
 // Pins the two numbers the zoom compensation rests on, both of which were
 // measured against a running game rather than derived:
 //
-//   - the axis and reference aspect fDefault*FOV is expressed in, which decides
+//   - the axis and reference aspect the engine's FOV angles are expressed in, which decides
 //     whether the whole of normal play runs at a fixed fraction of the pose
 //   - that the factor is exactly 1.0 when nothing is zoomed
 //
@@ -86,6 +86,42 @@ void ZoomingInShrinksTheAngle() {
               "screen displacement is preserved across the zoom");
 }
 
+// Read off a running game in first person: at the hip the first-person idle held
+// an animator adjust of -2.061 on an 80 degree camera and the frustum rendered
+// 0.45501; through a reflex sight the zoom adjust was -21.555, the animator
+// adjust 0 and the frustum 0.31466.
+const CameraFov kHip{80.0f, 0.0f, -2.061f};
+const CameraFov kReflexSight{80.0f, -21.555f, 0.0f};
+
+void TheCamerasFovAccountsForWhatWasRendered() {
+    CheckNear(RenderedTangent(kHip), 0.45501f, 0.00002f, "80 with an animator adjust of -2.061 renders 0.45501");
+    CheckNear(RenderedTangent(kReflexSight), 0.31466f, 0.00002f, "80 with a zoom adjust of -21.555 renders 0.31466");
+    Check(FovAccountsForFrustum(kHip, 0.45501f), "the hip members account for the hip frustum");
+    Check(FovAccountsForFrustum(kReflexSight, 0.31466f), "the sighted members account for the sighted frustum");
+    Check(!FovAccountsForFrustum(kHip, 0.47199f),
+          "members that leave two degrees unexplained do not account for the frustum");
+    Check(!FovAccountsForFrustum(CameraFov{0.0f, 0.0f, 0.0f}, 0.45501f), "a camera fov of zero accounts for nothing");
+}
+
+// The animator's adjust is part of the un-zoomed view. Measured against the
+// camera's 80 alone, the hip would read as a zoom of 0.964 for the whole of
+// ordinary play.
+void TheAnimatorAdjustIsNotAZoom() {
+    Check(cameraunlock::camera::FovZoomFactor(RenderedTangent(kHip), UnzoomedTangent(kHip)) == 1.0f,
+          "the factor is exactly 1.0 at the hip with the animator adjust on");
+    CheckNear(cameraunlock::camera::FovZoomFactor(0.31466f, UnzoomedTangent(kReflexSight)), 0.6667f, 0.0002f,
+              "the reflex sight's zoom is 0.6667");
+}
+
+void RollAndTheLeanAlongTheViewAreNotScaled() {
+    const cameraunlock::math::Vec3 lean(0.2f, -0.1f, -0.4f);
+    const cameraunlock::math::Vec3 scaled =
+        cameraunlock::camera::ScaleLeanForZoom(lean, cameraunlock::math::Vec3(0.0f, 0.0f, -1.0f), 0.6667f);
+    CheckNear(scaled.x, 0.2f * 0.6667f, 1e-6f, "the lean across the view scales by the factor");
+    CheckNear(scaled.y, -0.1f * 0.6667f, 1e-6f, "in both of its axes");
+    Check(scaled.z == -0.4f, "the lean along the view does not");
+}
+
 void RejectsImplausibleSettings() {
     Check(BaseTangentForFovDegrees(0.0f) == 0.0f, "zero degrees is rejected");
     Check(BaseTangentForFovDegrees(-10.0f) == 0.0f, "a negative FOV is rejected");
@@ -100,6 +136,9 @@ int main() {
     ReferenceIsHorizontalAtSixteenNine();
     UnzoomedFactorIsExactlyOne();
     ZoomingInShrinksTheAngle();
+    TheCamerasFovAccountsForWhatWasRendered();
+    TheAnimatorAdjustIsNotAZoom();
+    RollAndTheLeanAlongTheViewAreNotScaled();
     RejectsImplausibleSettings();
 
     if (g_failures == 0) {

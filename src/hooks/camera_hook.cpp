@@ -24,10 +24,13 @@
 #include "lean_trace.h"
 #include "ads_lean.h"
 
+#include <cameraunlock/ads/aim_mode.h>
 #include <cameraunlock/ads/lean_handover.h>
 #include <cameraunlock/camera/zoom_compensation.h>
 #include <cameraunlock/memory/pattern_scanner.h>
 #include <cameraunlock/memory/rtti_vtable.h>
+
+#include <cstring>
 
 namespace Fallout4HT {
 namespace {
@@ -67,26 +70,33 @@ void PublishRenderPose(const RenderPose& pose, bool haveRotation) {
 // all, and the first-person pass, which draws from the eye the skeleton gives it,
 // keeps the weapon where it is in the frame.
 //
-// True free look: the camera keeps the whole lean through the aim, and the
-// skeleton's geometry is moved back by the camera's share after the camera update
-// has read the eye, so the weapon stays put in the world while the head moves
-// around it. Toggling rides a fade of its own, so the weapon slides rather than
-// steps.
+// Free look, with a marker or without: the camera keeps the whole lean through
+// the aim and the skeleton is left where the game puts it, so the round leaves
+// from the body. The first-person pass draws the arms and weapon from the
+// skeleton's own eye, which neither the camera's lean nor anything written to
+// the skeleton after the camera update reaches, so the weapon keeps its place in
+// the frame in every mode.
 //
-// Both are first-person modes. Outside the first-person camera the camera keeps
+// In every mode the lean along the aim stays on the camera.
+//
+// All are first-person modes. Outside the first-person camera the camera keeps
 // the whole lean through the aim.
 //
 // Camera-thread only.
 cameraunlock::ads::LeanHandover g_leanHandover;
-cameraunlock::ads::AdsFade g_freeLookFade;
+// Follows the sights in first person, for the aim marker.
+cameraunlock::ads::AdsFade g_sightsFade;
+
+// How far along the clean aim the marker looks for what a round would hit.
+constexpr float kAimRayRangeUnits = 20000.0f;
 
 struct LeanSplit {
     float cameraX, cameraY, cameraZ;
     float rigX, rigY, rigZ;
     NiPoint3 rigWorld;
     uintptr_t rig;
-    // 0 in sights locked, 1 in true free look.
-    float weaponShare;
+    // 0 at the hip, 1 with the sights up in first person.
+    float sightsUp;
 };
 
 struct AdsReport {
@@ -112,26 +122,31 @@ bool CleanRootRotation(void* camera, NiMatrix33& out) {
     return false;
 }
 
-void ReportAds(bool aiming, bool firstPerson, bool haveRig, bool freeLook, const LeanSplit& split) {
+void ReportAds(bool aiming, bool firstPerson, bool haveRig, bool freeLook, const LeanSplit& split,
+               const cameraunlock::math::Vec3& asked) {
     const AdsReport now{aiming, firstPerson, haveRig, freeLook, true};
     if (!g_lastAdsReport.valid || now.aiming != g_lastAdsReport.aiming ||
         now.firstPerson != g_lastAdsReport.firstPerson || now.haveRig != g_lastAdsReport.haveRig ||
         now.freeLook != g_lastAdsReport.freeLook) {
         const char* what = !aiming      ? "sights down: the lean moves the view"
                            : !firstPerson ? "sights up outside first person: the camera keeps the whole lean"
-                           : freeLook    ? "sights up, true free look: the lean stays on the camera and the weapon stays put"
+                           : freeLook    ? "sights up, free look: the camera keeps the whole lean"
                            : haveRig     ? "sights up, sights locked: the lean is carried on the first-person skeleton"
                                          : "sights up with no first-person skeleton: the lean eases out";
         Log::Line("ADS: %s", what);
         g_lastAdsReport = now;
     }
     const uint64_t nowMs = GetTickCount64();
-    if (aiming && nowMs - g_lastAdsSampleMs >= kAdsSampleIntervalMs) {
+    const bool leaning = asked.x != 0.0f || asked.y != 0.0f || asked.z != 0.0f;
+    if ((aiming || leaning) && nowMs - g_lastAdsSampleMs >= kAdsSampleIntervalMs) {
         g_lastAdsSampleMs = nowMs;
-        Log::Line("ADS lean: camera (%.3f %.3f %.3f) m, rig (%.3f %.3f %.3f) m, rig moved (%.2f %.2f %.2f)"
-                  " units, clamp %.3f, weapon share %.2f",
-                  split.cameraX, split.cameraY, split.cameraZ, split.rigX, split.rigY, split.rigZ,
-                  split.rigWorld.x, split.rigWorld.y, split.rigWorld.z, LeanScale(), split.weaponShare);
+        // Tracker z is negative toward the screen, so the lean in is its negation.
+        Log::Line("lean: asked (%.3f %.3f %.3f) m, camera (%.3f %.3f %.3f) m, rig (%.3f %.3f %.3f) m,"
+                  " rig moved (%.2f %.2f %.2f) units, clamp %.3f | forward: asked %.3f m, applied %.3f m,"
+                  " zoom %.4f, sights up %.2f",
+                  asked.x, asked.y, asked.z, split.cameraX, split.cameraY, split.cameraZ, split.rigX, split.rigY,
+                  split.rigZ, split.rigWorld.x, split.rigWorld.y, split.rigWorld.z, LeanScale(), -asked.z,
+                  -(split.cameraZ + split.rigZ) * LeanScale(), FovSettings::CurrentZoomFactor(), split.sightsUp);
     }
 }
 
@@ -140,7 +155,7 @@ void StopLean() {
     // from the player every frame (measured: an offset written in one frame is
     // gone by the next camera update).
     g_leanHandover.Stop();
-    g_freeLookFade.Reset();
+    g_sightsFade.Reset();
     g_lastAdsReport.valid = false;
 }
 
@@ -157,9 +172,9 @@ LeanSplit SplitLean(void* camera, bool active, float x, float y, float z, bool f
     const uintptr_t rig = CleanRootRotation(camera, rootWorld) && firstPerson ? AdsLean::FirstPersonRig(player) : 0;
     const uint64_t nowMs = GetTickCount64();
 
+    out.sightsUp = 1.0f - g_sightsFade.Update(aiming && firstPerson, nowMs);
     const cameraunlock::ads::LeanShares shares = ShareLean(g_leanHandover, cameraunlock::math::Vec3(x, y, z),
                                                            firstPerson, aiming, freeLook, rig != 0, nowMs);
-    const float freeLookScale = g_freeLookFade.Update(freeLook, nowMs);
     out.cameraX = shares.camera.x;
     out.cameraY = shares.camera.y;
     out.cameraZ = shares.camera.z;
@@ -167,26 +182,49 @@ LeanSplit SplitLean(void* camera, bool active, float x, float y, float z, bool f
     out.rigY = shares.rig.y;
     out.rigZ = shares.rig.z;
     out.rig = rig;
-    out.weaponShare = rig != 0 ? 1.0f - freeLookScale : 0.0f;
     // Held to what the collision clamp allowed last frame: the rig has to move
     // before the camera update, which is before this frame's clamp can run.
     const float scale = LeanScale();
     out.rigWorld = TrackerLeanToWorldUnits(rootWorld, out.rigX * scale, out.rigY * scale, out.rigZ * scale);
-    ReportAds(aiming, firstPerson, rig != 0, freeLook, out);
+    ReportAds(aiming, firstPerson, rig != 0, freeLook, out, cameraunlock::math::Vec3(x, y, z));
     return out;
 }
 
-// After the held pose is on: in true free look, move the skeleton's geometry back
-// by what the camera added to the eye, so the weapon keeps its place in the world.
-void ApplyFreeLookWeapon(const LeanSplit& split) {
-    if (split.rig == 0 || split.weaponShare <= 0.0f) {
-        NoteWeaponShift(0, NiPoint3());
-        return;
-    }
+
+// Where the round will land, in the head-tracked view: the first thing along the
+// clean aim from the eye the round leaves from, seen from the eye the frame is
+// drawn from. With nothing in range it is the aim direction, which `snapshot`
+// already holds.
+AimMarkerState PlaceAimMarker(const CameraRootSnapshots& snapshot, float opacity) {
+    AimMarkerState marker{snapshot.aimNdcX, snapshot.aimNdcY, opacity};
+    const NiPoint3 cleanEye = HeldCleanEye();
     const NiPoint3 offset = HeldCameraOffset();
-    const NiPoint3 shift(-offset.x * split.weaponShare, -offset.y * split.weaponShare,
-                         -offset.z * split.weaponShare);
-    NoteWeaponShift(AdsLean::ShiftWeapon(split.rig, shift) ? split.rig : 0, shift);
+    const NiPoint3 aim(snapshot.cleanNiCamWorld[0][0], snapshot.cleanNiCamWorld[0][1], snapshot.cleanNiCamWorld[0][2]);
+    float distance = 0.0f;
+    const bool hit = lean_trace::AimRayHit(cleanEye, aim, kAimRayRangeUnits, distance);
+    if (hit) {
+        NiMatrix33 tracked;
+        std::memcpy(tracked.entry, snapshot.trackedNiCamWorld, sizeof(tracked.entry));
+        const NiPoint3 impact(cleanEye.x + aim.x * distance, cleanEye.y + aim.y * distance,
+                              cleanEye.z + aim.z * distance);
+        const NiPoint3 eye(cleanEye.x + offset.x, cleanEye.y + offset.y, cleanEye.z + offset.z);
+        const AimProjection projected =
+            ProjectWorldPointToNdc(impact, eye, tracked, snapshot.frustumRight, snapshot.frustumTop);
+        if (projected.valid) {
+            marker.ndcX = projected.ndcX;
+            marker.ndcY = projected.ndcY;
+        }
+    }
+    static uint64_t s_lastLogMs = 0;
+    const uint64_t nowMs = GetTickCount64();
+    if (nowMs - s_lastLogMs >= kAdsSampleIntervalMs) {
+        s_lastLogMs = nowMs;
+        Log::Line("aim marker: opacity %.2f, %s %.0f units along the aim, at ndc (%+.4f %+.4f), the aim direction"
+                  " alone at (%+.4f %+.4f)",
+                  opacity, hit ? "impact" : "nothing within", hit ? distance : kAimRayRangeUnits, marker.ndcX,
+                  marker.ndcY, snapshot.aimNdcX, snapshot.aimNdcY);
+    }
+    return marker;
 }
 
 // Camera-thread only. File scope rather than function statics: a local static
@@ -310,9 +348,11 @@ void __fastcall PlayerCameraUpdateHook(void* thisCamera) {
         // the render injection, the crosshair projection built from the basis
         // that was written, and the diagnostics all describe one camera.
         //
-        // Yaw, pitch and the lean translate the image, so all three take it.
-        // Roll rotates the image about the view axis by the same angle at every
-        // field of view, so it does not.
+        // Yaw, pitch and the lean across the view translate the image, so all
+        // three take it. Roll rotates the image about the view axis by the same
+        // angle at every field of view, so it does not, and neither does the
+        // lean along the view, which brings the scene closer and moves nothing
+        // across the frame.
         //
         // The frustum this uses was read at the end of the previous tick, since
         // the engine has not computed this one yet. A zoom is therefore followed
@@ -321,9 +361,11 @@ void __fastcall PlayerCameraUpdateHook(void* thisCamera) {
         if (zoom != 1.0f) {
             yaw = cameraunlock::camera::ScaleAngleForZoom(yaw, zoom);
             pitch = cameraunlock::camera::ScaleAngleForZoom(pitch, zoom);
-            posX *= zoom;
-            posY *= zoom;
-            posZ *= zoom;
+            const cameraunlock::math::Vec3 lean = cameraunlock::camera::ScaleLeanForZoom(
+                cameraunlock::math::Vec3(posX, posY, posZ), kTrackerForward, zoom);
+            posX = lean.x;
+            posY = lean.y;
+            posZ = lean.z;
         }
     }
     const HeadRotation head = haveRotation
@@ -335,7 +377,6 @@ void __fastcall PlayerCameraUpdateHook(void* thisCamera) {
 
     CameraMutationMutex().lock();
     ReleaseRenderPose();
-    ClearWeaponShift();
     if (!hasPosition) lean_trace::Reset();
     const LeanSplit split = SplitLean(thisCamera, hasPosition && haveRotation, posX, posY, posZ,
                                       mod.IsTrueFreeLook());
@@ -363,6 +404,7 @@ void __fastcall PlayerCameraUpdateHook(void* thisCamera) {
     // Nothing is applied this frame, so there is nothing for the fire path to
     // undo either.
     if (gate == TickGate::Suppressed || !haveRotation) {
+        PublishAimMarker(AimMarkerState{});
         CameraNodes nodes{};
         PublishHitMarkerView(ResolveCameraNodes(thisCamera, nodes) ? nodes.niCamera : 0);
         RetireTick(mod);
@@ -374,11 +416,13 @@ void __fastcall PlayerCameraUpdateHook(void* thisCamera) {
     // seqlock at the end. A zeroed snapshot (cameraRoot == 0) is the "invalid
     // frame" marker readers treat as "no data this frame".
     CameraRootSnapshots snapshot{};
+    bool held = false;
 
     static std::atomic<uint64_t> s_faults{0};
     __try {
         CameraNodes nodes{};
         if (!ResolveCameraNodes(thisCamera, nodes)) {
+                PublishAimMarker(AimMarkerState{});
             PublishHitMarkerView(0);
             // The scene graph is being torn down or rebuilt. Whatever node the
             // last snapshot points at may already be freed.
@@ -433,10 +477,9 @@ void __fastcall PlayerCameraUpdateHook(void* thisCamera) {
 
         // Publish the fully-built snapshot in one seqlock-guarded write.
         PublishCameraRootSnapshots(snapshot);
-        if (HoldLatestRenderPose(snapshot)) {
-            ApplyFreeLookWeapon(split);
-        } else {
-            // Every tick fails alike once it fails at all, so the count doubles
+        held = HoldLatestRenderPose(snapshot);
+        if (!held) {
+                // Every tick fails alike once it fails at all, so the count doubles
             // between lines rather than writing one a frame on the game thread.
             static uint64_t s_holdFailures = 0;
             if ((++s_holdFailures & (s_holdFailures - 1)) == 0) {
@@ -449,13 +492,20 @@ void __fastcall PlayerCameraUpdateHook(void* thisCamera) {
     } __except (SehAbsorbAccessViolation(GetExceptionCode(), "camera hook", s_faults)) {
         PublishHitMarkerView(0);
         PublishCameraRootSnapshots(CameraRootSnapshots{});
+        held = false;
     }
+    // Outside the __try: the marker's ray is the engine's collision query, and a
+    // fault inside it is the game's.
+    const float markerOpacity = held && snapshot.aimValid
+        ? cameraunlock::ads::AimMarkerOpacity(mod.GetAimMode(), split.sightsUp) : 0.0f;
+    PublishAimMarker(markerOpacity > 0.0f ? PlaceAimMarker(snapshot, markerOpacity) : AimMarkerState{});
     CameraMutationMutex().unlock();
 
     // Off the camera rather than off the pose, so the basis is visible without a
     // tracker connected and without loading a save. Self-limiting: once, then
     // only when the rendered FOV moves.
-    FovSettings::NoteRenderedFrustum(snapshot.frustumRight, snapshot.frustumTop);
+    FovSettings::NoteRenderedFrustum(thisCamera, AdsLean::IsFirstPersonCamera(thisCamera), snapshot.frustumRight,
+                                     snapshot.frustumTop);
 }
 
 // Resolve PlayerCamera's vtable by RTTI and hook the Update slot it inherits
@@ -505,10 +555,6 @@ bool InstallCameraHook() {
         return false;
     }
 
-    // Scans .data for the engine's own FOV settings, so it runs here on the
-    // init thread rather than on a camera tick. Failing leaves the compensation
-    // off and says so; it never guesses a reference.
-    FovSettings::Initialize();
     lean_trace::Initialize();
 
     HMODULE gameModule = GetModuleHandleA(GAME_EXE);

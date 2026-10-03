@@ -60,7 +60,7 @@ bool Hotkeys::Start(const Config& cfg) {
              [] { Mod::Instance().CycleDofMode(); });
     Register(m_poller, cfg.yaw_mode_key_name, "YawModeKey", [] { Mod::Instance().ToggleYawMode(); });
     Register(m_poller, cfg.true_free_look_key_name, "TrueFreeLookKey",
-             [] { Mod::Instance().ToggleTrueFreeLook(); });
+             [] { Mod::Instance().CycleAimMode(); });
     // Needed because which tracker app wins the source lock is a race decided in
     // milliseconds at startup, so a player running more than one (OpenTrack plus
     // a vendor tool) can end up on the wrong one with no way to say so from
@@ -120,7 +120,7 @@ bool Hotkeys::Start(const Config& cfg) {
         return false;
     }
 
-    Log::Line("Hotkeys ready: toggle=[%s] cycle tracking mode=[%s] yaw mode=[%s] true free look=[%s]"
+    Log::Line("Hotkeys ready: toggle=[%s] cycle tracking mode=[%s] yaw mode=[%s] aim mode=[%s]"
               " next tracker source=[%s]",
               cfg.toggle_key_name.c_str(), cfg.cycle_tracking_mode_key_name.c_str(),
               cfg.yaw_mode_key_name.c_str(), cfg.true_free_look_key_name.c_str(),
