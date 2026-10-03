@@ -18,7 +18,7 @@ Fallout 4.
 | CommonLibF4 | n/a | MIT | Not bundled; a reference for engine struct offsets |
 | CommonLibSSE-NG | n/a | MIT | Not bundled; cross-checked the same offsets |
 | AutoBeam | n/a | see upstream | Not bundled; corroborated one engine finding |
-| cameraunlock-core | 88a20e7789fb5ad907ae06136bc01184edbf4b21 | MIT | Compiled into `Fallout4HeadTracking.asi` |
+| cameraunlock-core | d43b109c9e5d5f4cebdb05b26e3a8c81a4085d6e | MIT | Compiled into `Fallout4HeadTracking.asi` |
 | OpenTrack | n/a | ISC | Not bundled; UDP protocol interoperability only |
 
 ---
@@ -319,7 +319,7 @@ from the same camera node we found, and the confirmation was worth having.
 Git submodule at `cameraunlock-core/`, compiled into `Fallout4HeadTracking.asi`. Our own code,
 MIT licensed, reproduced here so the notices are complete.
 
-- Pinned commit: `88a20e7789fb5ad907ae06136bc01184edbf4b21`
+- Pinned commit: `d43b109c9e5d5f4cebdb05b26e3a8c81a4085d6e`
 
 ```
 MIT License
