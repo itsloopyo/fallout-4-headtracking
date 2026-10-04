@@ -194,21 +194,29 @@ game:
    to the side or up and down, so the sights stay in front of your eye, and your
    rounds leave from where your eye is. Lean round a corner with the sights up
    and you can hit what you can see from there.
-2. **Free look with a marker** - the lean moves only your view, and your rounds
-   leave from where the game has your body.
+2. **Free look with a marker** - the weapon stays where the game has your body
+   and your head moves around it, so a lean to the side takes your eye off the
+   sights. Your rounds leave from the weapon.
 3. **True free look** - the same as mode 2.
 
-In all three the weapon keeps its place on screen when you lean: the game draws
-your arms and weapon from an eye of their own, which this version of the mod
-does not move, so in modes 2 and 3 the weapon does not stay behind in the world
-as you lean away from it. The aim marker of mode 2 is not on screen in this
-version either: the mod places the game's crosshair where the round will land
-and asks for it to be shown with the sights up, and the game keeps it hidden.
+The aim marker of mode 2 is not on screen in this version: the mod places the
+game's crosshair where the round will land and asks for it to be shown with the
+sights up, and the game keeps it hidden.
 
-Leaning toward or away from the sights moves only the view in every mode. In
-third person the view keeps the whole lean while you aim.
+Your arms and weapon are drawn from where your head is. At the hip, and in
+modes 2 and 3 with the sights up, the weapon stays with your body as you lean,
+so it moves across the view the way the world does, and the muzzle flash
+comes out of the muzzle. Leaning in brings the sights closer in every
+mode, and with the sights up your eye stops just behind them while the view goes
+on leaning in. In third person the view keeps the whole lean while you aim.
 
 A scope that fills the screen holds the view still while you look through it.
+
+### Picking things up
+
+The crosshair marks what you can pick up or use. It sits where your mouse or
+controller is aiming, wherever your head is turned or leaned, and that is the
+thing `E` acts on.
 
 ## Configuration
 

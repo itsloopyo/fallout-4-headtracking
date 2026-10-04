@@ -2,10 +2,12 @@
 
 #include "pch.h"
 #include "camera_hook.h"
+#include "activation_hook.h"
 #include "aim_decoupling.h"
 #include "camera_math.h"
 #include "camera_snapshot.h"
 #include "crosshair_hook.h"
+#include "first_person_view_hook.h"
 #include "hit_marker_hook.h"
 #include "hook_slot.h"
 #include "module_scan.h"
@@ -16,6 +18,9 @@
 #include "core/seh_guard.h"
 #include "core/vector_math.h"
 #include "diagnostics/frame_verdict.h"
+#if FALLOUT4_DEV_HOTKEYS
+#include "diagnostics/motion_probe.h"
+#endif
 #include "diagnostics/pose_trace.h"
 #include "diagnostics/render_audit.h"
 #include "game/fallout4_types.h"
@@ -191,15 +196,27 @@ LeanSplit SplitLean(void* camera, bool active, float x, float y, float z, bool f
 }
 
 
-// Where the round will land, in the head-tracked view: the first thing along the
-// clean aim from the eye the round leaves from, seen from the eye the frame is
-// drawn from. With nothing in range it is the aim direction, which `snapshot`
-// already holds.
-AimMarkerState PlaceAimMarker(const CameraRootSnapshots& snapshot, float opacity) {
-    AimMarkerState marker{snapshot.aimNdcX, snapshot.aimNdcY, opacity};
+// Below this the camera's lean moves the aim point's place in the frame by less
+// than can be seen, and the aim direction alone is the answer.
+constexpr float kMinLeanForAimRayUnits = 0.05f;
+
+// Where the body's aim lands, in the head-tracked view: the first thing along the
+// clean aim from the eye the game put the camera at, seen from the eye the frame
+// is drawn from. The crosshair and the aim marker both sit there. The aim
+// direction alone, which `snapshot` already holds, is right only while the two
+// eyes are the same point: under a lean of 10 units something 80 units off sits
+// 7 degrees from where its direction says. With nothing in range the direction
+// stands.
+void PlaceAimPoint(CameraRootSnapshots& snapshot) {
     const NiPoint3 cleanEye = HeldCleanEye();
     const NiPoint3 offset = HeldCameraOffset();
+    if (offset.x * offset.x + offset.y * offset.y + offset.z * offset.z <
+        kMinLeanForAimRayUnits * kMinLeanForAimRayUnits) {
+        return;
+    }
     const NiPoint3 aim(snapshot.cleanNiCamWorld[0][0], snapshot.cleanNiCamWorld[0][1], snapshot.cleanNiCamWorld[0][2]);
+    const float directionX = snapshot.aimNdcX;
+    const float directionY = snapshot.aimNdcY;
     float distance = 0.0f;
     const bool hit = lean_trace::AimRayHit(cleanEye, aim, kAimRayRangeUnits, distance);
     if (hit) {
@@ -211,20 +228,51 @@ AimMarkerState PlaceAimMarker(const CameraRootSnapshots& snapshot, float opacity
         const AimProjection projected =
             ProjectWorldPointToNdc(impact, eye, tracked, snapshot.frustumRight, snapshot.frustumTop);
         if (projected.valid) {
-            marker.ndcX = projected.ndcX;
-            marker.ndcY = projected.ndcY;
+            snapshot.aimNdcX = projected.ndcX;
+            snapshot.aimNdcY = projected.ndcY;
         }
     }
     static uint64_t s_lastLogMs = 0;
     const uint64_t nowMs = GetTickCount64();
     if (nowMs - s_lastLogMs >= kAdsSampleIntervalMs) {
         s_lastLogMs = nowMs;
-        Log::Line("aim marker: opacity %.2f, %s %.0f units along the aim, at ndc (%+.4f %+.4f), the aim direction"
-                  " alone at (%+.4f %+.4f)",
-                  opacity, hit ? "impact" : "nothing within", hit ? distance : kAimRayRangeUnits, marker.ndcX,
-                  marker.ndcY, snapshot.aimNdcX, snapshot.aimNdcY);
+        Log::Line("aim point: %s %.0f units along the aim, at ndc (%+.4f %+.4f), the aim direction alone at"
+                  " (%+.4f %+.4f)",
+                  hit ? "impact" : "nothing within", hit ? distance : kAimRayRangeUnits, snapshot.aimNdcX,
+                  snapshot.aimNdcY, directionX, directionY);
     }
-    return marker;
+}
+
+// The eye relief held behind the weapon's sights while aiming: the first-person
+// pass's near plane, 1 unit, and two centimetres.
+constexpr float kEyeReliefUnits = 2.5f;
+
+// What the camera adds to the eye the arms and weapon are drawn from. At the hip
+// it is the camera's whole share of the lean. With the sights up the part along
+// the aim stops short of the sights: the world camera goes on leaning in to its
+// limit, and from the stop on the weapon comes with it.
+NiPoint3 WeaponPassEyeOffset(void* camera, const CameraRootSnapshots& snapshot, float sightsUp) {
+    NiPoint3 offset = HeldCameraOffset();
+    if (sightsUp <= 0.0f) return offset;
+    const NiPoint3 forward(snapshot.cleanNiCamWorld[0][0], snapshot.cleanNiCamWorld[0][1],
+                           snapshot.cleanNiCamWorld[0][2]);
+    const float along = offset.x * forward.x + offset.y * forward.y + offset.z * forward.z;
+    float depth = 0.0f;
+    if (along <= 0.0f ||
+        !AdsLean::SightDepth(AdsLean::FirstPersonRig(reinterpret_cast<uintptr_t>(PlayerActor())), camera, forward,
+                             depth)) {
+        return offset;
+    }
+    const float stop = depth > kEyeReliefUnits ? depth - kEyeReliefUnits : 0.0f;
+    const float cut = (along > stop ? along - stop : 0.0f) * sightsUp;
+    static uint64_t s_lastLogMs = 0;
+    const uint64_t nowMs = GetTickCount64();
+    if (cut > 0.0f && nowMs - s_lastLogMs >= kAdsSampleIntervalMs) {
+        s_lastLogMs = nowMs;
+        Log::Line("forward stop: sights %.2f units ahead of the eye, the eye stops %.2f units in, %.2f of the lean in"
+                  " carried with the weapon", depth, stop, cut);
+    }
+    return NiPoint3(offset.x - forward.x * cut, offset.y - forward.y * cut, offset.z - forward.z * cut);
 }
 
 // Camera-thread only. File scope rather than function statics: a local static
@@ -282,6 +330,8 @@ void RecordTick(const Mod& mod, float swingDeg, float appliedDeg) {
 // every instrument here said the camera was fine.
 void RetireTick(const Mod& mod) {
     lean_trace::Reset();
+    ClearAimReference();
+    SetFirstPersonEyeOffset(NiPoint3());
     RecordTick(mod, 0.0f, kNothingApplied);
     PublishCameraRootSnapshots(CameraRootSnapshots{});
 }
@@ -488,6 +538,12 @@ void __fastcall PlayerCameraUpdateHook(void* thisCamera) {
             }
         }
         PublishHitMarkerView(nodes.niCamera);
+#if FALLOUT4_DEV_HOTKEYS
+        if (held) {
+            RecordMotionProbe(thisCamera, cleanRootWorld, HeldCleanEye(), HeldCameraOffset(), LeanScale(),
+                              posX, posY, posZ, yaw, pitch, roll);
+        }
+#endif
 
     } __except (SehAbsorbAccessViolation(GetExceptionCode(), "camera hook", s_faults)) {
         PublishHitMarkerView(0);
@@ -496,9 +552,26 @@ void __fastcall PlayerCameraUpdateHook(void* thisCamera) {
     }
     // Outside the __try: the marker's ray is the engine's collision query, and a
     // fault inside it is the game's.
+    SetFirstPersonEyeOffset(held && AdsLean::IsFirstPersonCamera(thisCamera)
+                                ? WeaponPassEyeOffset(thisCamera, snapshot, split.sightsUp) : NiPoint3());
+    if (held && snapshot.aimValid) {
+        PlaceAimPoint(snapshot);
+        PublishCameraRootSnapshots(snapshot);
+        const NiPoint3 cleanEye = HeldCleanEye();
+        const NiPoint3 offset = HeldCameraOffset();
+        SetAimReference(AimReference{
+            cleanEye,
+            NiPoint3(snapshot.cleanNiCamWorld[0][0], snapshot.cleanNiCamWorld[0][1], snapshot.cleanNiCamWorld[0][2]),
+            NiPoint3(cleanEye.x + offset.x, cleanEye.y + offset.y, cleanEye.z + offset.z),
+            NiPoint3(snapshot.trackedNiCamWorld[0][0], snapshot.trackedNiCamWorld[0][1],
+                     snapshot.trackedNiCamWorld[0][2])});
+    } else {
+        ClearAimReference();
+    }
     const float markerOpacity = held && snapshot.aimValid
         ? cameraunlock::ads::AimMarkerOpacity(mod.GetAimMode(), split.sightsUp) : 0.0f;
-    PublishAimMarker(markerOpacity > 0.0f ? PlaceAimMarker(snapshot, markerOpacity) : AimMarkerState{});
+    PublishAimMarker(markerOpacity > 0.0f ? AimMarkerState{snapshot.aimNdcX, snapshot.aimNdcY, markerOpacity}
+                                          : AimMarkerState{});
     CameraMutationMutex().unlock();
 
     // Off the camera rather than off the pose, so the basis is visible without a
@@ -598,6 +671,8 @@ bool InstallCameraHook() {
         RemoveCameraHook();
         return false;
     }
+    InstallActivationHook(moduleBase, text);
+    InstallFirstPersonViewHook(text);
     AdsLean::Install(gameModule);
     StartFrameVerdictReporter();
     StartPauseWatchdog();
@@ -612,6 +687,8 @@ void RemoveCameraHook() {
     RemoveViewMatrixHook();
     RemovePlayerHook();
     RemoveCrosshairHook();
+    RemoveActivationHook();
+    RemoveFirstPersonViewHook();
     RemoveAimDecouplingHooks();
     GameState::Shutdown();
 

@@ -7,6 +7,7 @@
 namespace Fallout4HT::lean_trace {
 void Initialize();
 void Reset();
+
 float Clamp(const NiPoint3& eye, const NiPoint3& offset, uintptr_t camera,
             uintptr_t state, float nearPlane, uint64_t tick, float deltaTime);
 // Where a ray from `start` along the unit `direction` first meets something a round

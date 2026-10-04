@@ -8,6 +8,9 @@
 
 #include <cameraunlock/memory/rtti_vtable.h>
 
+#include <cmath>
+#include <cstring>
+
 namespace Fallout4HT::AdsLean {
 namespace {
 
@@ -182,6 +185,56 @@ void CarryOnRig(uintptr_t rig, const NiPoint3& world) {
     } __except (SehAbsorbAccessViolation(GetExceptionCode(), "rig lean", s_faults)) {
         g_lastRigWrite = RigWrite{};
     }
+}
+
+namespace {
+
+// NiObjectNET::name, a BSFixedString: a pointer to a pool entry whose characters
+// start 0x18 in.
+constexpr uintptr_t kObjectName = 0x10;
+constexpr uintptr_t kNameChars = 0x18;
+// The first-person camera state's eye node.
+constexpr uintptr_t kStateEyeNode = 0x50;
+// The bone every weapon's sights attach to. The gauss rifle's reflex sight and
+// the 10mm pistol's rear notch both sit on it: the sight leaves the frame as the
+// eye comes within the pass's near plane of it.
+constexpr const char* kSightBone = "WeaponOptics1";
+
+uintptr_t FindNamed(uintptr_t node, const char* wanted, int depth, int& visited) {
+    if (node == 0 || depth > kMaxDepth || visited >= kMaxNodes) return 0;
+    ++visited;
+    const uintptr_t entry = ReadPtr(node + kObjectName);
+    if (entry != 0 && std::strcmp(reinterpret_cast<const char*>(entry + kNameChars), wanted) == 0) return node;
+    if (!IsNode(node)) return 0;
+    const uintptr_t children = ReadPtr(node + NiNodeOffsets::ChildrenData);
+    const uint16_t capacity = *reinterpret_cast<const uint16_t*>(node + kChildrenCapacity);
+    if (children == 0 || capacity > kMaxChildren) return 0;
+    for (uint16_t i = 0; i < capacity; ++i) {
+        const uintptr_t found = FindNamed(ReadPtr(children + i * sizeof(uintptr_t)), wanted, depth + 1, visited);
+        if (found != 0) return found;
+    }
+    return 0;
+}
+
+}  // namespace
+
+bool SightDepth(uintptr_t rig, void* camera, const NiPoint3& forward, float& units) {
+    if (rig == 0 || camera == nullptr) return false;
+    static std::atomic<uint64_t> s_faults{0};
+    __try {
+        const uintptr_t state = ReadPtr(reinterpret_cast<uintptr_t>(camera) + TESCameraOffsets::CurrentState);
+        const uintptr_t eyeNode = state != 0 ? ReadPtr(state + kStateEyeNode) : 0;
+        if (eyeNode == 0) return false;
+        int visited = 0;
+        const uintptr_t sight = FindNamed(rig, kSightBone, 0, visited);
+        if (sight == 0) return false;
+        const NiPoint3* eye = WorldTranslationOf(eyeNode);
+        const NiPoint3* at = WorldTranslationOf(sight);
+        units = (at->x - eye->x) * forward.x + (at->y - eye->y) * forward.y + (at->z - eye->z) * forward.z;
+        return std::isfinite(units);
+    } __except (SehAbsorbAccessViolation(GetExceptionCode(), "sight depth", s_faults)) {
+    }
+    return false;
 }
 
 }  // namespace Fallout4HT::AdsLean

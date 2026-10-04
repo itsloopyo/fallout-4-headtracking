@@ -324,12 +324,15 @@ bool HoldLatestRenderPoseLocked(const CameraRootSnapshots& snap) {
     return true;
 }
 
-// A frame is about 10 ms, so three missed frames is a pause rather than a hitch.
-// Low enough that the snap back to body aim lands with the VATS interface rather
-// than visibly after it; high enough that an ordinary stutter does not trip it,
-// and self-correcting if one does, because the next camera tick puts the pose
-// straight back.
-constexpr unsigned long long kPausedAfterMs = 40;
+// VATS, the Pip-Boy and the scope overlay are caught on the tick they open, by
+// the game state gate. This is for what is left: the pause menu, the console and
+// the other menus that stop the game. It has to sit well above the longest frame
+// the game draws while it is running, because taking the pose off for a slow
+// frame and putting it back on the next is a view that snaps to the body's aim
+// and back: at 40 ms it fired on every frame slower than 25 fps, up to 12 times
+// a second through a stretch of cell loading, with 40% of that second's view
+// builds drawn un-tracked.
+constexpr unsigned long long kPausedAfterMs = 500;
 
 std::atomic<bool> g_watchdogRunning{false};
 std::thread g_watchdogThread;

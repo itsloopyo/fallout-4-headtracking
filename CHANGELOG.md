@@ -22,6 +22,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Weapon debris (the game's NVIDIA FleX effect) is switched off while the mod is loaded. With it on the game can crash inside its own FleX library shortly after a save loads, with or without the mod. `bNVFlexEnable` in `Fallout4Prefs.ini` is left as you have it, so the effect is back once the mod is removed.
 
+### Fixed
+- In third person the view no longer jerks back and forth while you lean and move. The check that stops a lean at a wall was being set off by the game's own camera, which trails the view while you walk, so the lean was dropped and eased back in several times a second. The same check was set off in first person by your own body and power armour. A lean now stops only for walls, floors and the rest of the level.
+- The view no longer snaps to where your body is aimed and back when the game drops below 25 frames a second or stalls for a moment, as it does while it loads the area ahead.
+- What you can pick up or use is what the crosshair is on. With your head turned or leaned the game was offering whatever sat at the centre of the view instead.
+- The crosshair stays on what you are aiming at when you lean. It was placed by the direction of your aim alone, which is off by several degrees for something close while you lean.
+- The muzzle flash comes out of the muzzle when you lean. It was drawn beside the weapon. Your arms and weapon are now drawn from where your head is, so they move across the view with the world, and with the sights up in the free look modes the weapon stays with your body while your head moves around it.
+- Leaning in with the sights up brings the sights closer, and your eye stops just behind them.
+
 ### Removed
 - The sensitivity, scale, deadzone, response curve and axis inversion settings: `[Sensitivity] YawMultiplier`, `PitchMultiplier` and `RollMultiplier`, and `[Position] SensitivityX`, `SensitivityY`, `SensitivityZ`, `InvertX`, `InvertY` and `InvertZ`. Set these in your tracker app instead. The x inversion every earlier version shipped switched on (`InvertX=true`) is now part of how the mod converts the tracker's axes to the game's, so leaning goes the same way it did.
 - With these settings at their shipped defaults the camera moves as it did before.

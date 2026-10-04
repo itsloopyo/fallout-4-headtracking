@@ -51,7 +51,9 @@ set(MOD_SOURCES
     src/hooks/camera_hook.cpp
     src/hooks/camera_math.cpp
     src/hooks/camera_snapshot.cpp
+    src/hooks/activation_hook.cpp
     src/hooks/crosshair_hook.cpp
+    src/hooks/first_person_view_hook.cpp
     src/hooks/hit_marker_hook.cpp
     src/hooks/crosshair_layout.cpp
     src/hooks/hook_slot.cpp
@@ -108,7 +110,8 @@ endif()
 # build nor the release packager ever drops a test binary into bin/. Enable with
 option(FALLOUT4_DEV_HOTKEYS "Build the diagnostic hotkeys (developer aid, not for release)" OFF)
 if(FALLOUT4_DEV_HOTKEYS)
-    target_sources(Fallout4HeadTracking PRIVATE src/diagnostics/isolated_input.cpp)
+    target_sources(Fallout4HeadTracking PRIVATE src/diagnostics/isolated_input.cpp
+                                                 src/diagnostics/motion_probe.cpp)
     target_compile_definitions(Fallout4HeadTracking PRIVATE FALLOUT4_DEV_HOTKEYS=1)
     message(WARNING "FALLOUT4_DEV_HOTKEYS is ON. This build registers twelve "
                     "reverse-engineering instruments on Ctrl+Shift+D/J/I/K/B/V/X/N/M/W/O "

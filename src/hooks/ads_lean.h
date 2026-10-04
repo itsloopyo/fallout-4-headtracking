@@ -33,4 +33,9 @@ uintptr_t FirstPersonRig(uintptr_t player);
 // again. A second camera tick in one frame replaces the first tick's write.
 void CarryOnRig(uintptr_t rig, const NiPoint3& world);
 
+// How far ahead of the first-person eye the held weapon's sights sit, in units
+// along `forward`, read from the weapon's own skeleton this frame. False with no
+// weapon out or an unreadable skeleton.
+bool SightDepth(uintptr_t rig, void* camera, const NiPoint3& forward, float& units);
+
 }  // namespace Fallout4HT::AdsLean

@@ -5,7 +5,9 @@
 #include "core/logging.h"
 #include "hooks/module_scan.h"
 #include "hooks/player_hook.h"
+#include "hooks/activation_hook.h"
 #include "hooks/collision_math.h"
+#include "hooks/hook_slot.h"
 
 namespace Fallout4HT::lean_trace {
 namespace {
@@ -16,6 +18,9 @@ using Pick = void* (*)(void*, PickData*);
 Construct g_construct = nullptr;
 SetRay g_setRay = nullptr;
 Pick g_pick = nullptr;
+// The engine's pick behind this mod's hook on it: the mod's own rays go straight here.
+Pick g_originalPick = nullptr;
+HookSlot g_pickHook;
 cameraunlock::camera::LeanClamp g_clamp;
 uintptr_t g_lastCamera = 0;
 uintptr_t g_lastState = 0;
@@ -43,9 +48,18 @@ constexpr uint64_t kSampleReportMs = 5000;
 struct QueryContext { void* cell; float margin; int channel; };
 
 // The collision layer the game's projectiles are on.
-constexpr int kProjectileChannel = 6;
+constexpr uint32_t kProjectileChannel = 6;
 
-struct RayResult { bool queried; bool hit; float fraction; float cosine; };
+// How many bodies that are not level geometry one lean ray passes through, and
+// how far past each it starts again.
+constexpr int kMaxBodiesPassed = 8;
+constexpr float kPassStepUnits = 1.0f;
+
+struct RayResult { bool queried; bool hit; float fraction; float cosine; uint32_t filter; };
+// The last lean ray that hit, for the log line.
+float g_hitDistance = 0;
+float g_hitCosine = 0;
+uint32_t g_hitFilter = 0;
 
 template<class T> T& Field(PickData& data, size_t offset) {
     return *reinterpret_cast<T*>(data.bytes + offset);
@@ -62,28 +76,62 @@ void ReleaseWorld(PickData& data) {
 }
 
 RayResult CastRay(void* cell, const NiPoint3& from, const NiPoint3& to, const cameraunlock::math::Vec3& direction,
-                  int channel) {
+                  uint32_t filter) {
     if (!g_construct || !g_setRay || !g_pick || !cell) return {};
     PickData data{};
     g_construct(&data);
     g_setRay(&data, &from, &to);
-    Field<uint32_t>(data, 0xC) = static_cast<uint32_t>(channel);
+    Field<uint32_t>(data, 0xC) = filter;
     // Render-only queries neither consume the gameplay pick budget nor skip when it is spent.
     data.bytes[0xDC] = 0;
     data.bytes[0xDD] = 0;
-    g_pick(cell, &data);
+    (g_originalPick ? g_originalPick : g_pick)(cell, &data);
     RayResult result;
     result.queried = Field<uintptr_t>(data, 0xC0) != 0 && data.bytes[0xDE] == 0;
     result.hit = Field<uint32_t>(data, 0xBC) != 0;
     result.fraction = Field<float>(data, 0x80) / Field<float>(data, 0x3C);
     result.cosine = direction.x * Field<float>(data, 0x70) +
         direction.y * Field<float>(data, 0x74) + direction.z * Field<float>(data, 0x78);
+    result.filter = Field<uint32_t>(data, 0xAC);
     ReleaseWorld(data);
     if (result.hit && (!std::isfinite(result.fraction) || !std::isfinite(result.cosine) || result.fraction < 0 ||
                        result.fraction > 1)) {
         result.queried = false;
     }
     return result;
+}
+
+// The collision group of the player's own bodies, learned from the engine: a pick
+// it casts from the player's eye carries that group, which is how its own picks
+// pass through the player. Zero until one has been seen.
+std::atomic<uint32_t> g_playerGroup{0};
+std::atomic<uint64_t> g_groupLearnedMs{0};
+constexpr uint64_t kGroupRelearnMs = 1000;
+constexpr float kHavokUnitsPerGameUnit = 0.0142875f;
+constexpr float kEyeToleranceUnits = 0.5f;
+
+bool StartsAt(const float* origin, const NiPoint3& eye) {
+    const float dx = origin[0] / kHavokUnitsPerGameUnit - eye.x;
+    const float dy = origin[1] / kHavokUnitsPerGameUnit - eye.y;
+    const float dz = origin[2] / kHavokUnitsPerGameUnit - eye.z;
+    return dx * dx + dy * dy + dz * dz <= kEyeToleranceUnits * kEyeToleranceUnits;
+}
+
+void* PickHook(void* cell, PickData* data) {
+    const uint32_t group = Field<uint32_t>(*data, 0xC) >> 16;
+    const uint64_t now = GetTickCount64();
+    if (group != 0 && now - g_groupLearnedMs.load(std::memory_order_relaxed) >= kGroupRelearnMs) {
+        AimReference reference;
+        const float* origin = &Field<float>(*data, 0x20);
+        if (GetAimReference(reference) &&
+            (StartsAt(origin, reference.cleanEye) || StartsAt(origin, reference.trackedEye))) {
+            if (g_playerGroup.exchange(group, std::memory_order_relaxed) != group) {
+                Log::Line("collision: the player's collision group is %u", group);
+            }
+            g_groupLearnedMs.store(now, std::memory_order_relaxed);
+        }
+    }
+    return g_originalPick(cell, data);
 }
 
 void* PlayerCell() {
@@ -136,6 +184,10 @@ void Initialize() {
         g_construct && g_setRay && g_pick ? "READY" : "ERROR: collision unavailable",
         reinterpret_cast<void*>(g_construct), reinterpret_cast<void*>(g_setRay),
         reinterpret_cast<void*>(g_pick));
+    if (g_pick) {
+        g_pickHook.Install(reinterpret_cast<void*>(g_pick), reinterpret_cast<void*>(&PickHook),
+                           reinterpret_cast<void**>(&g_originalPick), "cell pick");
+    }
 }
 
 cameraunlock::camera::LeanObstruction Query(void* context,
@@ -144,18 +196,39 @@ cameraunlock::camera::LeanObstruction Query(void* context,
     const auto& query = *static_cast<QueryContext*>(context);
     // Overreach for glancing approaches, with the same cosine floor as the standoff.
     const float range = CollisionTraceRange(maxDistance, query.margin);
-    const NiPoint3 from(start.x, start.y, start.z);
-    const NiPoint3 to(start.x + direction.x * range, start.y + direction.y * range,
-                     start.z + direction.z * range);
-    const RayResult ray = CastRay(query.cell, from, to, direction, query.channel);
-    if (!ray.queried) return {};
-    return {true, ray.hit, ray.hit ? CollisionHitAllowance(ray.fraction * range, query.margin, ray.cosine) : 0};
+    // A body that is not level geometry is passed through: the ray starts again
+    // just past where it met it. A ray that starts inside a body does not hit it.
+    float travelled = 0.0f;
+    for (int pass = 0; pass < kMaxBodiesPassed; ++pass) {
+        const NiPoint3 from(start.x + direction.x * travelled, start.y + direction.y * travelled,
+                            start.z + direction.z * travelled);
+        const NiPoint3 to(start.x + direction.x * range, start.y + direction.y * range,
+                          start.z + direction.z * range);
+        const RayResult ray = CastRay(query.cell, from, to, direction, static_cast<uint32_t>(query.channel));
+        if (!ray.queried) return {};
+        if (!ray.hit) return {true, false, 0};
+        const float distance = travelled + ray.fraction * (range - travelled);
+        g_hitDistance = distance;
+        g_hitCosine = ray.cosine;
+        g_hitFilter = ray.filter;
+        if (CollisionLayerBlocksLean(ray.filter)) {
+            return {true, true, CollisionHitAllowance(distance, query.margin, ray.cosine)};
+        }
+        travelled = distance + kPassStepUnits;
+        if (travelled >= range) return {true, false, 0};
+    }
+    return {true, false, 0};
 }
 
 bool AimRayHit(const NiPoint3& start, const NiPoint3& direction, float range, float& distance) {
     const NiPoint3 to(start.x + direction.x * range, start.y + direction.y * range, start.z + direction.z * range);
+    // The round passes through the player's own body, and so does this ray. Until
+    // the group is known there is no telling the player's arm from a wall.
+    const uint32_t group = g_playerGroup.load(std::memory_order_relaxed);
+    if (group == 0) return false;
     const RayResult ray = CastRay(PlayerCell(), start, to,
-                                  cameraunlock::math::Vec3(direction.x, direction.y, direction.z), kProjectileChannel);
+                                  cameraunlock::math::Vec3(direction.x, direction.y, direction.z),
+                                  kProjectileChannel | (group << 16));
     if (!ray.queried || !ray.hit) return false;
     distance = ray.fraction * range;
     return true;
@@ -206,10 +279,10 @@ float Clamp(const NiPoint3& eye, const NiPoint3& offset, uintptr_t camera,
     const uint64_t sinceReport = now - g_lastReport;
     const bool changed = failed != g_lastFailed || contact != g_lastContact;
     if ((changed && sinceReport >= kMinChangeReportMs) || sinceReport >= kSampleReportMs) {
-        Log::Line("collision: queried=%s contact=%s desired=%.3f allowed=%.3f margin=%.3f near=%.3f channel=%d eye=(%.2f,%.2f,%.2f) changes=%u",
+        Log::Line("collision: queried=%s contact=%s desired=%.3f allowed=%.3f margin=%.3f near=%.3f channel=%d eye=(%.2f,%.2f,%.2f) changes=%u | last hit %.1f units off, cosine %.3f, filter %08X",
             failed ? "FAILED" : "ok", contact ? "yes" : "no", desired.Magnitude(),
             allowed.Magnitude(), settings.skin, nearPlane, config.collision_channel, eye.x, eye.y, eye.z,
-            g_changesSinceReport);
+            g_changesSinceReport, g_hitDistance, g_hitCosine, g_hitFilter);
         g_lastReport = now;
         g_lastFailed = failed;
         g_lastContact = contact;
