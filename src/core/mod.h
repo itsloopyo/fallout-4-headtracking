@@ -46,7 +46,7 @@ public:
     // is drawn. Saved to CameraUnlock.ini on each press.
     void CycleAimMode();
     cameraunlock::ads::AimMode GetAimMode() const { return m_aimMode.load(); }
-    bool IsTrueFreeLook() const { return GetAimMode() != cameraunlock::ads::AimMode::SightsLocked; }
+    bool IsFreeLook() const { return cameraunlock::ads::IsFreeLook(GetAimMode()); }
 
     // Step to a different tracker app when more than one is sending to the port.
     void CycleTrackerSource();

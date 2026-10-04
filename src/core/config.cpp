@@ -106,6 +106,7 @@ cfg::ImportResult Import(const cfg::LegacyInput& input, Config& out) {
     follows.NotInLegacy(C::CollisionReleaseSmoothing);
     follows.NotInLegacy(C::TrueFreeLook);
     follows.NotInLegacy(C::FreeLookMarker);
+    follows.NotInLegacy(C::StockSights);
     follows.NotInLegacy(C::TrueFreeLookKey);
 
     return status == legacy::ReadStatus::Absent
@@ -122,13 +123,14 @@ cfg::ConfigTable<Config> MakeConfigTable() {
          C::RemoteSmoothing, C::PositionEnabled, C::PositionLimitX, C::PositionLimitY, C::PositionLimitYDown,
          C::PositionLimitZ, C::PositionLimitZBack, C::CollisionEnabled, C::CollisionMargin,
          C::CollisionChannel, C::CollisionReleaseSmoothing,
-         C::TrueFreeLook, C::FreeLookMarker, C::ToggleKey, C::CycleTrackingModeKey, C::YawModeKey, C::TrueFreeLookKey});
+         C::TrueFreeLook, C::FreeLookMarker, C::StockSights, C::ToggleKey, C::CycleTrackingModeKey, C::YawModeKey, C::TrueFreeLookKey});
     table.Select(C::CollisionChannel).Engine();
     table.Select(C::WorldSpaceYaw).Writable()
         .Select(C::RotationEnabled).Writable()
         .Select(C::PositionEnabled).Writable()
         .Select(C::TrueFreeLook).Writable()
-        .Select(C::FreeLookMarker).Writable();
+        .Select(C::FreeLookMarker).Writable()
+        .Select(C::StockSights).Writable();
     table.Local("General", "ShowNotifications", &Config::show_notifications, cfg::BoolCodec(),
                 "true: write the mod's notices (tracking on or off, a mode change) to HeadTracking.log.");
     table.Local("Hotkeys", "CycleTrackerSourceKey", &Config::cycle_tracker_source_key_name, cfg::HotkeyCodec(),

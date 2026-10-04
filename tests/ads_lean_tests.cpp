@@ -264,7 +264,7 @@ void RepeatTicksReplaceTheRigWrite() {
 
 // What the camera hook does with a mode: only whether it is a free look mode reaches
 // the lean, the weapon and the shares.
-bool FreeLook(AimMode mode) { return mode != AimMode::SightsLocked; }
+bool FreeLook(AimMode mode) { return cameraunlock::ads::IsFreeLook(mode); }
 
 LeanShares SettledSightsUp(AimMode mode, const Vec3& lean) {
     LeanHandover handover;
@@ -292,8 +292,9 @@ void TheMarkerIsMode2WithTheSightsUp() {
         if (cameraunlock::ads::AimMarkerOpacity(AimMode::FreeLookMarker, sightsUp) != sightsUp) followed = false;
         if (cameraunlock::ads::AimMarkerOpacity(AimMode::SightsLocked, sightsUp) != 0.0f) followed = false;
         if (cameraunlock::ads::AimMarkerOpacity(AimMode::TrueFreeLook, sightsUp) != 0.0f) followed = false;
+        if (cameraunlock::ads::AimMarkerOpacity(AimMode::StockSights, sightsUp) != 0.0f) followed = false;
     }
-    Check(followed, "its opacity is the sights' fade in mode 2 and zero in modes 1 and 3");
+    Check(followed, "its opacity is the sights' fade in mode 2 and zero in modes 1, 3 and 4");
     Check(cameraunlock::ads::AimMarkerOpacity(AimMode::FreeLookMarker, 0.0f) == 0.0f, "there is none at the hip");
     Check(cameraunlock::ads::AimMarkerOpacity(AimMode::FreeLookMarker, 1.0f) == 1.0f, "it is opaque with the sights up");
 }
@@ -327,6 +328,144 @@ void LeaningInIsNeverCutShortWithTheSightsUp() {
     }
 }
 
+// A pose with every axis in it: degrees, then tracker metres.
+struct Pose {
+    float yaw = 20.0f, pitch = -8.0f, roll = 11.0f;
+    float x = 0.21f, y = -0.07f, z = -0.18f;
+};
+
+// One tick of the camera hook's stock sights step.
+float Ease(cameraunlock::ads::AdsFade& fade, AimMode mode, bool sightsUp, unsigned long long nowMs, Pose& p) {
+    return EaseStockSightsPose(fade, mode, sightsUp, nowMs, p.yaw, p.pitch, p.x, p.y, p.z);
+}
+
+bool Untouched(const Pose& p) {
+    const Pose whole;
+    return p.yaw == whole.yaw && p.pitch == whole.pitch && p.roll == whole.roll && p.x == whole.x && p.y == whole.y &&
+           p.z == whole.z;
+}
+
+bool ScaledBy(const Pose& p, float share) {
+    const Pose whole;
+    return p.yaw == whole.yaw * share && p.pitch == whole.pitch * share && p.x == whole.x * share &&
+           p.y == whole.y * share && p.z == whole.z * share && p.roll == whole.roll;
+}
+
+void StockSightsLeavesTheHipAlone() {
+    std::printf("stock sights: at the hip the pose passes through untouched\n");
+    cameraunlock::ads::AdsFade fade;
+    bool whole = true;
+    for (unsigned long long t = 0; t <= kSettledMs; t += 7) {
+        Pose p;
+        if (Ease(fade, AimMode::StockSights, false, t, p) != 1.0f || !Untouched(p)) whole = false;
+    }
+    Check(whole, "yaw, pitch, roll and the lean are the tracker's");
+}
+
+void StockSightsEasesThePoseOutAndKeepsRoll() {
+    std::printf("stock sights: sights up, yaw, pitch and the lean ease out and roll stays\n");
+    cameraunlock::ads::AdsFade fade;
+    Pose hip;
+    Ease(fade, AimMode::StockSights, false, 0, hip);
+    bool scaled = true;
+    bool sawMidway = false;
+    float last = 1.0f;
+    bool falling = true;
+    for (unsigned long long t = 1; t < 1 + kSettledMs; t += 7) {
+        Pose p;
+        const float share = Ease(fade, AimMode::StockSights, true, t, p);
+        if (!ScaledBy(p, share)) scaled = false;
+        if (share > 0.0f && share < 1.0f) sawMidway = true;
+        if (share > last) falling = false;
+        last = share;
+    }
+    Check(sawMidway, "the walk passed through the transition");
+    Check(scaled, "mid-transition yaw, pitch and the lean are scaled by the fade and roll is untouched");
+    Check(falling, "the share only falls while the sights stay up");
+    Pose up;
+    Check(Ease(fade, AimMode::StockSights, true, 1 + kSettledMs, up) == 0.0f, "the share settles at zero");
+    Check(up.yaw == 0.0f && up.pitch == 0.0f && up.x == 0.0f && up.y == 0.0f && up.z == 0.0f,
+          "yaw, pitch and all three lean axes are zero");
+    Check(up.roll == Pose().roll, "roll is the tracker's roll");
+}
+
+// More than a whole leg moves between two ticks 7 ms apart, and far less than the step a
+// leg restarted from its own end would make.
+constexpr float kLargestStep = 0.12f;
+
+void StockSightsReversalsContinue() {
+    std::printf("stock sights: a reversal mid-transition continues from where it was\n");
+    for (const bool byModeKey : {false, true}) {
+        cameraunlock::ads::AdsFade fade;
+        Pose p;
+        float last = Ease(fade, AimMode::StockSights, false, 0, p);
+        bool continuous = true;
+        bool reversed = false;
+        // Sights up for 70 ms, then the aim button is released or the mode key steps to
+        // sights locked, then back 70 ms later.
+        for (unsigned long long t = 1; t <= 211; t += 7) {
+            const bool away = t > 71 && t <= 141;
+            const bool sightsUp = byModeKey || !away;
+            const AimMode mode = byModeKey && away ? AimMode::SightsLocked : AimMode::StockSights;
+            Pose q;
+            const float share = Ease(fade, mode, sightsUp, t, q);
+            if (fabsf(share - last) > kLargestStep) continuous = false;
+            if (away && share > last) reversed = true;
+            last = share;
+        }
+        Check(reversed, byModeKey ? "the mode key turned the fade round" : "the aim button turned the fade round");
+        Check(continuous, "nothing stepped");
+    }
+}
+
+void TheOtherModesNeverEaseThePose() {
+    std::printf("in the other three modes the stock sights share is 1, sights up or down\n");
+    for (const AimMode mode : {AimMode::SightsLocked, AimMode::FreeLookMarker, AimMode::TrueFreeLook}) {
+        cameraunlock::ads::AdsFade fade;
+        bool whole = true;
+        for (unsigned long long t = 0; t <= 2 * kSettledMs; t += 7) {
+            Pose p;
+            if (Ease(fade, mode, t > kSettledMs, t, p) != 1.0f || !Untouched(p)) whole = false;
+        }
+        Check(whole, "the pose passes through untouched");
+    }
+}
+
+void StockSightsSharesTheLeanAsSightsLockedDoes() {
+    std::printf("stock sights hands the lean over as sights locked does, with TrueFreeLook set beside it too\n");
+    const AimMode besideFreeLook = cameraunlock::ads::DecodeAimMode(true, false, true);
+    Check(besideFreeLook == AimMode::StockSights && !FreeLook(besideFreeLook) &&
+              !FreeLook(cameraunlock::ads::DecodeAimMode(true, true, true)),
+          "StockSights beside TrueFreeLook is not free look");
+    LeanHandover locked;
+    LeanHandover stock;
+    bool same = true;
+    for (unsigned long long t = 0; t <= 1 + kSettledMs; t += 7) {
+        const LeanShares a = locked.Update(kLean, kTrackerForward, t > 0, FreeLook(AimMode::SightsLocked), true, t);
+        const LeanShares b = stock.Update(kLean, kTrackerForward, t > 0, FreeLook(besideFreeLook), true, t);
+        if (a.camera.x != b.camera.x || a.camera.y != b.camera.y || a.camera.z != b.camera.z || a.rig.x != b.rig.x ||
+            a.rig.y != b.rig.y || a.rig.z != b.rig.z) {
+            same = false;
+        }
+    }
+    Check(same, "the camera's and the rig's shares are those of sights locked at every step");
+}
+
+void StockSightsLeavesNoLeanInWithTheSightsUp() {
+    std::printf("stock sights: a lean in is whole at the hip and zero with the sights up\n");
+    cameraunlock::ads::AdsFade fade;
+    Pose hip;
+    hip.z = -0.4f;
+    Ease(fade, AimMode::StockSights, false, 0, hip);
+    Check(hip.z == -0.4f, "the hip keeps all 0.4 m");
+    Pose rising;
+    Ease(fade, AimMode::StockSights, true, 1, rising);
+    Pose up;
+    up.z = -0.4f;
+    Ease(fade, AimMode::StockSights, true, 1 + kSettledMs, up);
+    Check(up.z == 0.0f, "nothing of it is left with the sights up");
+}
+
 }  // namespace
 
 int main() {
@@ -346,6 +485,12 @@ int main() {
     TheMarkerIsMode2WithTheSightsUp();
     LeaningInIsNeverCutShortAtTheHip();
     LeaningInIsNeverCutShortWithTheSightsUp();
+    StockSightsLeavesTheHipAlone();
+    StockSightsEasesThePoseOutAndKeepsRoll();
+    StockSightsReversalsContinue();
+    TheOtherModesNeverEaseThePose();
+    StockSightsSharesTheLeanAsSightsLockedDoes();
+    StockSightsLeavesNoLeanInWithTheSightsUp();
 
     if (g_failures == 0) {
         std::printf("All tests passed!\n");

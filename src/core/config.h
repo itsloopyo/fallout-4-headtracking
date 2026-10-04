@@ -31,8 +31,8 @@ struct Config : cameraunlock::HeadTrackingConfig {
     std::string cycle_tracker_source_key_name = "Ctrl+Shift+J";
 };
 
-// The rows of CameraUnlock.ini. Only the tracking mode pair, WorldSpaceYaw and the aim mode pair
-// (TrueFreeLook, FreeLookMarker) are Writable: their hotkeys save the player's choice, and End changes the session only.
+// The rows of CameraUnlock.ini. Only the tracking mode pair, WorldSpaceYaw and the aim mode's three
+// (TrueFreeLook, FreeLookMarker, StockSights) are Writable: their hotkeys save the player's choice, and End changes the session only.
 cameraunlock::config::ConfigTable<Config> MakeConfigTable();
 
 // HeadTracking.ini as the builds before the canonical format read it (legacy_config/), mapped

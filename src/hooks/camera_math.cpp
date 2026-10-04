@@ -134,6 +134,45 @@ cameraunlock::ads::LeanShares ShareLean(cameraunlock::ads::LeanHandover& handove
     return handover.Update(lean, kTrackerForward, aiming, trueFreeLook, rigAvailable, nowMs);
 }
 
+NiMatrix44 RebaseWorldToCam(const NiMatrix44& worldToCam, const NiMatrix33& from, const NiPoint3& fromEye,
+                            const NiMatrix33& to, const NiPoint3& toEye) {
+    // p -> from.LocalToWorld(to.WorldToLocal(p - toEye)) + fromEye, as a linear
+    // part (its columns are the images of the world axes) and a translation.
+    float linear[3][3];
+    const NiPoint3 axes[3] = {NiPoint3(1.0f, 0.0f, 0.0f), NiPoint3(0.0f, 1.0f, 0.0f), NiPoint3(0.0f, 0.0f, 1.0f)};
+    for (int j = 0; j < 3; ++j) {
+        const NiPoint3 image = from.LocalToWorld(to.WorldToLocal(axes[j]));
+        linear[0][j] = image.x;
+        linear[1][j] = image.y;
+        linear[2][j] = image.z;
+    }
+    const NiPoint3 carried = from.LocalToWorld(to.WorldToLocal(toEye));
+    const float translation[3] = {fromEye.x - carried.x, fromEye.y - carried.y, fromEye.z - carried.z};
+
+    NiMatrix44 out;
+    for (int i = 0; i < 4; ++i) {
+        const float* row = worldToCam.entry[i];
+        for (int j = 0; j < 3; ++j) {
+            out.entry[i][j] = row[0] * linear[0][j] + row[1] * linear[1][j] + row[2] * linear[2][j];
+        }
+        out.entry[i][3] = row[0] * translation[0] + row[1] * translation[1] + row[2] * translation[2] + row[3];
+    }
+    return out;
+}
+
+float EaseStockSightsPose(cameraunlock::ads::AdsFade& fade, cameraunlock::ads::AimMode mode, bool sightsUp,
+                          unsigned long long nowMs, float& yaw, float& pitch, float& x, float& y, float& z) {
+    const float share = fade.Update(cameraunlock::ads::StockSightsEngaged(mode, sightsUp), nowMs);
+    if (share != 1.0f) {
+        yaw *= share;
+        pitch *= share;
+        x *= share;
+        y *= share;
+        z *= share;
+    }
+    return share;
+}
+
 NiPoint3 RigDelta(const RigWrite& last, uintptr_t rig, const NiPoint3& local, const NiPoint3& rigWorld) {
     const bool stillOurs = rig == last.rig && local.x == last.localAfter.x && local.y == last.localAfter.y &&
                            local.z == last.localAfter.z;

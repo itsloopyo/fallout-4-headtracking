@@ -170,7 +170,8 @@ AimMode LoadedAimMode(const wchar_t* name, const char* position) {
     cfg::ConfigOwner<Config> owner(Options(s));
     const cfg::ConfigLoadResult<Config> loaded = owner.Load();
     Check(loaded.status == cfg::ConfigLoadStatus::Canonical, "the file loads as canonical");
-    return cameraunlock::ads::DecodeAimMode(loaded.config.true_free_look, loaded.config.free_look_marker);
+    return cameraunlock::ads::DecodeAimMode(loaded.config.true_free_look, loaded.config.free_look_marker,
+                                          loaded.config.stock_sights);
 }
 
 void AimModeStartsSightsLocked() {
@@ -178,6 +179,7 @@ void AimModeStartsSightsLocked() {
     const Config defaults = Fallout4HT::MakeConfigTable().defaults();
     Check(!defaults.true_free_look, "TrueFreeLook defaults to false");
     Check(!defaults.free_look_marker, "FreeLookMarker defaults to false");
+    Check(!defaults.stock_sights, "StockSights defaults to false");
 
     // tracked was never free look and marker snapped the view, so the retired
     // cycle's key maps onto nothing, whatever it holds.
@@ -192,6 +194,12 @@ void AimModeStartsSightsLocked() {
           "FreeLookMarker alone is sights locked");
     Check(LoadedAimMode(L"both", "TrueFreeLook=true\r\nFreeLookMarker=true\r\n") == AimMode::FreeLookMarker,
           "both true is free look with a marker");
+    Check(LoadedAimMode(L"stock", "StockSights=true\r\n") == AimMode::StockSights, "StockSights alone is stock sights");
+    Check(LoadedAimMode(L"stock-over-free", "TrueFreeLook=true\r\nStockSights=true\r\n") == AimMode::StockSights,
+          "StockSights beside TrueFreeLook is stock sights");
+    Check(LoadedAimMode(L"stock-over-both", "TrueFreeLook=true\r\nFreeLookMarker=true\r\nStockSights=true\r\n") ==
+              AimMode::StockSights,
+          "StockSights beside both is stock sights");
 }
 
 void TogglesSaveTheirRowsOnly() {
@@ -230,32 +238,36 @@ void TogglesSaveTheirRowsOnly() {
     }
     Check(threw, "EnableOnStartup is not Writable: End never persists");
 
-    // The aim mode cycle, as the hotkey runs it: each press is one save of the pair,
-    // and a restart comes back in the mode last chosen, from each of the three.
+    // The aim mode cycle, as the hotkey runs it: each press is one save of the three,
+    // and a restart comes back in the mode last chosen, from each of the four.
     AimMode aim = AimMode::SightsLocked;
     const std::vector<std::string> expected[] = {
         {"TrueFreeLook=true", "FreeLookMarker=true"},
         {"FreeLookMarker=false"},
-        {"TrueFreeLook=false"},
+        {"TrueFreeLook=false", "StockSights=true"},
+        {"StockSights=false"},
     };
-    const AimMode order[] = {AimMode::FreeLookMarker, AimMode::TrueFreeLook, AimMode::SightsLocked};
-    for (int press = 0; press < 3; ++press) {
+    const AimMode order[] = {AimMode::FreeLookMarker, AimMode::TrueFreeLook, AimMode::StockSights,
+                             AimMode::SightsLocked};
+    for (int press = 0; press < 4; ++press) {
         aim = cameraunlock::ads::NextAimMode(aim);
-        Check(aim == order[press], "the cycle goes sights locked, free look with a marker, true free look");
+        Check(aim == order[press], "the cycle goes sights locked, free look with a marker, true free look, stock sights");
         const std::string before = ReadBytes(path);
-        const cameraunlock::ads::AimModePair pair = cameraunlock::ads::EncodeAimMode(aim);
-        const cfg::ConfigSaveResult saved = owner.Save([pair](Config& c) {
-            c.true_free_look = pair.trueFreeLook;
-            c.free_look_marker = pair.freeLookMarker;
+        const cameraunlock::ads::AimModeSettings settings = cameraunlock::ads::EncodeAimMode(aim);
+        const cfg::ConfigSaveResult saved = owner.Save([settings](Config& c) {
+            c.true_free_look = settings.trueFreeLook;
+            c.free_look_marker = settings.freeLookMarker;
+            c.stock_sights = settings.stockSights;
         });
         Check(saved.status == cfg::ConfigSaveStatus::Saved, "the aim mode save is Saved");
         Check(ChangedLines(before, ReadBytes(path)) == expected[press],
-              "a press writes the aim mode pair and no other line");
+              "a press writes the lines of the aim mode and no other");
 
         cfg::ConfigOwner<Config> restarted(Options(s));
         const cfg::ConfigLoadResult<Config> reread = restarted.Load();
         Check(reread.status == cfg::ConfigLoadStatus::Canonical, "the saved file reads back as canonical");
-        Check(cameraunlock::ads::DecodeAimMode(reread.config.true_free_look, reread.config.free_look_marker) == aim,
+        Check(cameraunlock::ads::DecodeAimMode(reread.config.true_free_look, reread.config.free_look_marker,
+                                               reread.config.stock_sights) == aim,
               "a restart comes back in the mode last chosen");
         Check(!reread.config.world_space_yaw, "the yaw choice survives a restart");
         Check(reread.config.rotation_enabled && !reread.config.position_enabled, "the mode survives a restart");

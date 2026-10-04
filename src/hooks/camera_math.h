@@ -4,6 +4,8 @@
 
 #include "game/fallout4_types.h"
 
+#include <cameraunlock/ads/ads_fade.h>
+#include <cameraunlock/ads/aim_mode.h>
 #include <cameraunlock/ads/lean_handover.h>
 #include <cameraunlock/math/vec3.h>
 
@@ -86,6 +88,21 @@ inline const cameraunlock::math::Vec3 kTrackerForward(0.0f, 0.0f, -1.0f);
 cameraunlock::ads::LeanShares ShareLean(cameraunlock::ads::LeanHandover& handover, const cameraunlock::math::Vec3& lean,
                                         bool firstPerson, bool aiming, bool trueFreeLook, bool rigAvailable,
                                         unsigned long long nowMs);
+
+// A camera's worldToCam as it would read with the camera standing at `toEye` with
+// world rotation `to`, given the matrix it holds at `fromEye` with rotation
+// `from`. The matrix is a view-projection, so it is carried across rather than
+// rebuilt: a world point is first moved to where it sits relative to the `from`
+// camera as it sat relative to the `to` one.
+NiMatrix44 RebaseWorldToCam(const NiMatrix44& worldToCam, const NiMatrix33& from, const NiPoint3& fromEye,
+                            const NiMatrix33& to, const NiPoint3& toEye);
+
+// Stock sights: scales yaw, pitch and the lean by the share of the pose that reaches the
+// view, 1 at the hip and 0 with the sights up, and returns that share. Roll is not taken,
+// so a head tilt stays at every stage. In the other three modes the share is 1. `sightsUp`
+// is this frame's polled aim state in the first-person camera.
+float EaseStockSightsPose(cameraunlock::ads::AdsFade& fade, cameraunlock::ads::AimMode mode, bool sightsUp,
+                          unsigned long long nowMs, float& yaw, float& pitch, float& x, float& y, float& z);
 
 // What the camera adds to a clean eye that already carries `rigWorld`, the rig's
 // share of the lean, so the eye lands on the un-leaned eye plus `scale` of the

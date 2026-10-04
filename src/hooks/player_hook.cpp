@@ -324,7 +324,7 @@ bool HoldLatestRenderPoseLocked(const CameraRootSnapshots& snap) {
     return true;
 }
 
-// VATS, the Pip-Boy and the scope overlay are caught on the tick they open, by
+// VATS and the Pip-Boy are caught on the tick they open, by
 // the game state gate. This is for what is left: the pause menu, the console and
 // the other menus that stop the game. It has to sit well above the longest frame
 // the game draws while it is running, because taking the pose off for a slow

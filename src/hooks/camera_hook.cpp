@@ -27,6 +27,7 @@
 #include "game/fov_settings.h"
 #include "game/game_state.h"
 #include "lean_trace.h"
+#include "ui/aim_marker.h"
 #include "ads_lean.h"
 
 #include <cameraunlock/ads/aim_mode.h>
@@ -91,6 +92,8 @@ void PublishRenderPose(const RenderPose& pose, bool haveRotation) {
 cameraunlock::ads::LeanHandover g_leanHandover;
 // Follows the sights in first person, for the aim marker.
 cameraunlock::ads::AdsFade g_sightsFade;
+// Stock sights: the share of yaw, pitch and the lean that reaches the view.
+cameraunlock::ads::AdsFade g_stockSightsFade;
 
 // How far along the clean aim the marker looks for what a round would hit.
 constexpr float kAimRayRangeUnits = 20000.0f;
@@ -152,6 +155,25 @@ void ReportAds(bool aiming, bool firstPerson, bool haveRig, bool freeLook, const
                   asked.x, asked.y, asked.z, split.cameraX, split.cameraY, split.cameraZ, split.rigX, split.rigY,
                   split.rigZ, split.rigWorld.x, split.rigWorld.y, split.rigWorld.z, LeanScale(), -asked.z,
                   -(split.cameraZ + split.rigZ) * LeanScale(), FovSettings::CurrentZoomFactor(), split.sightsUp);
+    }
+}
+
+// One line as the share leaves 1 and one as it returns, and a sample every two
+// seconds while it is below 1.
+void ReportStockSights(float share, float yaw, float pitch, float roll) {
+    static bool s_eased = false;
+    static uint64_t s_lastSampleMs = 0;
+    const bool eased = share < 1.0f;
+    const uint64_t nowMs = GetTickCount64();
+    if (eased != s_eased) {
+        s_eased = eased;
+        Log::Line("ADS: %s", eased ? "sights up, stock sights: yaw, pitch and the lean ease out, roll stays"
+                                   : "stock sights: the whole pose is back on the view");
+    }
+    if (eased && nowMs - s_lastSampleMs >= kAdsSampleIntervalMs) {
+        s_lastSampleMs = nowMs;
+        Log::Line("stock sights: pose share %.2f, applied yaw %.3f pitch %.3f roll %.3f deg", share, yaw, pitch,
+                  roll);
     }
 }
 
@@ -390,6 +412,16 @@ void __fastcall PlayerCameraUpdateHook(void* thisCamera) {
         hasPosition = mod.GetPositionOffset(posX, posY, posZ);
         worldSpaceYaw = mod.IsWorldSpaceYaw();
 
+        // Before the zoom factor, the lean split and everything downstream of
+        // them, so all of it works from the pose that is applied.
+        if (haveRotation) {
+            const bool sightsUp = AdsLean::IsAiming(reinterpret_cast<uintptr_t>(PlayerActor())) &&
+                                  AdsLean::IsFirstPersonCamera(thisCamera);
+            const float share = EaseStockSightsPose(g_stockSightsFade, mod.GetAimMode(), sightsUp, GetTickCount64(),
+                                                    yaw, pitch, posX, posY, posZ);
+            ReportStockSights(share, yaw, pitch, roll);
+        }
+
         // A narrow field of view magnifies everything in the frame, head
         // tracking included, so a scope or iron sights would otherwise sweep the
         // view further for the same head angle and read as the mod's
@@ -418,6 +450,7 @@ void __fastcall PlayerCameraUpdateHook(void* thisCamera) {
             posZ = lean.z;
         }
     }
+    if (!haveRotation) g_stockSightsFade.Reset();
     const HeadRotation head = haveRotation
         ? ComputeHeadRotation(yaw, pitch, roll, worldSpaceYaw)
         : HeadRotation{};
@@ -429,7 +462,7 @@ void __fastcall PlayerCameraUpdateHook(void* thisCamera) {
     ReleaseRenderPose();
     if (!hasPosition) lean_trace::Reset();
     const LeanSplit split = SplitLean(thisCamera, hasPosition && haveRotation, posX, posY, posZ,
-                                      mod.IsTrueFreeLook());
+                                      mod.IsFreeLook());
     RenderPose pose{};
     pose.rotation = head;
     pose.positionX = split.cameraX;
@@ -454,7 +487,7 @@ void __fastcall PlayerCameraUpdateHook(void* thisCamera) {
     // Nothing is applied this frame, so there is nothing for the fire path to
     // undo either.
     if (gate == TickGate::Suppressed || !haveRotation) {
-        PublishAimMarker(AimMarkerState{});
+        ShowAimMarker(0.0f, 0.0f, 0.0f);
         CameraNodes nodes{};
         PublishHitMarkerView(ResolveCameraNodes(thisCamera, nodes) ? nodes.niCamera : 0);
         RetireTick(mod);
@@ -472,7 +505,7 @@ void __fastcall PlayerCameraUpdateHook(void* thisCamera) {
     __try {
         CameraNodes nodes{};
         if (!ResolveCameraNodes(thisCamera, nodes)) {
-                PublishAimMarker(AimMarkerState{});
+                ShowAimMarker(0.0f, 0.0f, 0.0f);
             PublishHitMarkerView(0);
             // The scene graph is being torn down or rebuilt. Whatever node the
             // last snapshot points at may already be freed.
@@ -570,8 +603,7 @@ void __fastcall PlayerCameraUpdateHook(void* thisCamera) {
     }
     const float markerOpacity = held && snapshot.aimValid
         ? cameraunlock::ads::AimMarkerOpacity(mod.GetAimMode(), split.sightsUp) : 0.0f;
-    PublishAimMarker(markerOpacity > 0.0f ? AimMarkerState{snapshot.aimNdcX, snapshot.aimNdcY, markerOpacity}
-                                          : AimMarkerState{});
+    ShowAimMarker(snapshot.aimNdcX, snapshot.aimNdcY, markerOpacity);
     CameraMutationMutex().unlock();
 
     // Off the camera rather than off the pose, so the basis is visible without a

@@ -7,7 +7,7 @@
 namespace Fallout4HT {
 
 // Gates head tracking to actual gameplay, which for Fallout 4 means keeping it
-// off for Pip-Boy, scope overlays and both halves of VATS. VATS needs two signals:
+// off for the Pip-Boy and both halves of VATS. VATS needs two signals:
 //
 //  - The targeting menu does not reframe. It freezes the view you had and labels
 //    the target through it, so a head-turned camera puts the target off screen

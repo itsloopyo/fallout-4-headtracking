@@ -32,6 +32,20 @@ bool CleanRayFor(const NiPoint3* origin, const NiPoint3* direction, NiPoint3& cl
     static std::atomic<uint64_t> s_faults{0};
     __try {
         if (!IsViewAxisRay(&origin->x, &direction->x, &reference.trackedEye.x, &reference.trackedForward.x)) {
+            static uint64_t s_lastLogMs = 0;
+            const uint64_t nowMs = GetTickCount64();
+            if (nowMs - s_lastLogMs >= 2000) {
+                s_lastLogMs = nowMs;
+                const float dx = origin->x - reference.trackedEye.x, dy = origin->y - reference.trackedEye.y,
+                            dz = origin->z - reference.trackedEye.z;
+                const float cosine = direction->x * reference.trackedForward.x +
+                                     direction->y * reference.trackedForward.y +
+                                     direction->z * reference.trackedForward.z;
+                Log::Line("activation: a ray starting %.2f units from the tracked eye, %.3f deg off the tracked"
+                          " view axis, was left as the game cast it",
+                          sqrtf(dx * dx + dy * dy + dz * dz),
+                          acosf(cosine > 1.0f ? 1.0f : cosine < -1.0f ? -1.0f : cosine) * 57.29578f);
+            }
             return false;
         }
     } __except (SehAbsorbAccessViolation(GetExceptionCode(), "activation ray", s_faults)) {

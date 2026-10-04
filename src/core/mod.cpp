@@ -209,7 +209,7 @@ void Mod::ConfigureSession() {
     m_worldSpaceYaw.store(m_config.world_space_yaw);
     Log::Line("Yaw mode: %s", m_worldSpaceYaw.load() ? "horizon-locked (world)" : "camera-local");
 
-    m_aimMode.store(cameraunlock::ads::DecodeAimMode(m_config.true_free_look, m_config.free_look_marker));
+    m_aimMode.store(cameraunlock::ads::DecodeAimMode(m_config.true_free_look, m_config.free_look_marker, m_config.stock_sights));
     Log::Line("%s", cameraunlock::ads::AimModeLabel(m_aimMode.load()));
 
     // The table reads a pair that names no mode as its defaults, so every
@@ -381,10 +381,11 @@ void Mod::CycleAimMode() {
     Log::Line("%s", cameraunlock::ads::AimModeLabel(mode));
     Notify(cameraunlock::ads::AimModeLabel(mode));
 
-    const cameraunlock::ads::AimModePair pair = cameraunlock::ads::EncodeAimMode(mode);
-    SaveConfig([pair](Config& c) {
-        c.true_free_look = pair.trueFreeLook;
-        c.free_look_marker = pair.freeLookMarker;
+    const cameraunlock::ads::AimModeSettings settings = cameraunlock::ads::EncodeAimMode(mode);
+    SaveConfig([settings](Config& c) {
+        c.true_free_look = settings.trueFreeLook;
+        c.free_look_marker = settings.freeLookMarker;
+        c.stock_sights = settings.stockSights;
     });
 }
 

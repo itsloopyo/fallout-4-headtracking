@@ -178,39 +178,48 @@ starts with tracking on or off as `EnableOnStartup` says.
 
 ### Aiming down sights
 
-Head tracking stays on while you aim. The weapon stays where your mouse or
-controller points it, so with your head turned it sits off to one side with its
-sights still lined up, and your rounds land where those sights point. Head
-movement is scaled to the zoom, so a sight that narrows the view does not
-magnify it. Leaning in towards the screen is not scaled: it moves the view the
-same distance at any zoom.
+Head tracking stays on while you aim, unless you pick stock sights below. The
+weapon stays where your mouse or controller points it, so with your head turned
+it sits off to one side with its sights still lined up, and your rounds land
+where those sights point. Head movement is scaled to the zoom, so a scope does
+not magnify it. Leaning in towards the screen is not scaled: it moves the view
+the same distance at any zoom.
 
-`Insert` / `Ctrl+Shift+U` cycles three ways of handling a lean while you aim,
-and the mod saves the one you pick, so it holds the next time you start the
-game:
+`Insert` / `Ctrl+Shift+U` cycles four ways of aiming, and the mod saves the one
+you pick, so it holds the next time you start the game:
 
-1. **Sights locked** (default) - leaning never takes your eye off the sights.
-   As the sights come up, your arms and weapon move with your head when you lean
-   to the side or up and down, so the sights stay in front of your eye, and your
-   rounds leave from where your eye is. Lean round a corner with the sights up
-   and you can hit what you can see from there.
-2. **Free look with a marker** - the weapon stays where the game has your body
-   and your head moves around it, so a lean to the side takes your eye off the
-   sights. Your rounds leave from the weapon.
-3. **True free look** - the same as mode 2.
+1. **Sights locked** (default) - leaning never takes your eye off the sights,
+   and leaning in towards them brings them closer.
+2. **Free look with a marker** - the weapon stays put and your head moves freely
+   around it, so the sights only line up with your head behind them. A small
+   white marker shows where your rounds will land while the sights are up.
+3. **True free look** - the same, with no marker. To place a shot you have to
+   put your head behind the sights, as you would in VR. It is hard.
+4. **Stock sights** - while the sights are up your head stops turning and
+   leaning the view, so the sights sit in the centre as they do without head
+   tracking. Tilting your head still tilts the view. When you lower the weapon
+   the view goes back to where you are looking.
 
-The aim marker of mode 2 is not on screen in this version: the mod places the
-game's crosshair where the round will land and asks for it to be shown with the
-sights up, and the game keeps it hidden.
+Leaning carries on through the aim. In sights locked, as the sights come up,
+your arms and weapon move with your head when you lean to the side or up and
+down, so the sights stay in front of your eye, and your rounds leave from where
+your eye is. Lean round a corner with the sights up and you can hit what you can
+see from there. In modes 2 and 3 the weapon stays with your body as you lean and
+your rounds leave from the weapon. Leaning in brings the sights closer in modes
+1 to 3, and your eye stops just behind them while the view goes on leaning in.
+In third person the view keeps the whole lean while you aim.
 
-Your arms and weapon are drawn from where your head is. At the hip, and in
-modes 2 and 3 with the sights up, the weapon stays with your body as you lean,
-so it moves across the view the way the world does, and the muzzle flash
-comes out of the muzzle. Leaning in brings the sights closer in every
-mode, and with the sights up your eye stops just behind them while the view goes
-on leaning in. In third person the view keeps the whole lean while you aim.
+Head tracking carries on through a scope that fills the screen. With your head
+off a scope's axis its own reticle is no longer where the round goes. In mode 2
+the white marker is. In stock sights the scope is the game's own, and its
+reticle is where the round goes.
 
-A scope that fills the screen holds the view still while you look through it.
+The character the game names while you aim at them, and the prompt that comes
+with it, is the one your sights are on, wherever your head is turned.
+
+The marker of mode 2 is drawn over the finished frame through Direct3D 11. The
+mod leaves the game's presentation alone until the first time that marker is
+needed, so it touches nothing there in the other three modes.
 
 ### Picking things up
 
@@ -223,7 +232,7 @@ thing `E` acts on.
 <!-- cameraunlock:config -->
 The mod reads its settings from `CameraUnlock.ini` in the game folder, and creates the file when it starts and finds none. Edit it with any text editor.
 
-A setting set to `default` takes its value from `Defaults.ini`, which every head tracking mod that keeps its settings in `CameraUnlock.ini` reads. Head tracking mods that keep their settings in another file do not read it. Writing a value in place of `default` changes that setting for this game only. When the mod saves a setting that a hotkey changed in game, it writes the new value in place of `default`, so that setting no longer follows `Defaults.ini` in this game until you set it to `default` again.
+A setting set to `default` takes its value from `Defaults.ini`, which every head tracking mod that keeps its settings in `CameraUnlock.ini` reads. Head tracking mods that keep their settings in another file do not read it. Changing a setting in `Defaults.ini` changes it in every game that has it set to `default`. Writing a value in place of `default` changes that setting for this game only. When the mod saves a setting that a hotkey changed in game, it writes the new value in place of `default`, so that setting no longer follows `Defaults.ini` in this game until you set it to `default` again.
 
 `Defaults.ini` is `%AppData%\CameraUnlock\Defaults.ini` on Windows; `$XDG_CONFIG_HOME/CameraUnlock/Defaults.ini` on Linux, or `~/.config/CameraUnlock/Defaults.ini` where `XDG_CONFIG_HOME` is not set, under Wine and Proton too; and `~/Library/Application Support/CameraUnlock/Defaults.ini` on macOS. The mod's log, where it writes one, names the file it read.
 
@@ -240,6 +249,7 @@ The built-in value of each setting set to `default` below:
 - `PositionEnabled=true`
 - `TrueFreeLook=false`
 - `FreeLookMarker=false`
+- `StockSights=false`
 - `PositionLimitX=0.3`
 - `PositionLimitY=0.2`
 - `PositionLimitYDown=0.2`
@@ -302,6 +312,9 @@ TrueFreeLook=default
 ; true, with TrueFreeLook=true: an aim marker shows where your shot will land while you aim down the sights.
 ; It does nothing while TrueFreeLook is false.
 FreeLookMarker=default
+; true: while you aim down the sights your head stops moving the view, apart from tilting it,
+; so the sights sit in the centre as they do without head tracking. At the hip nothing changes.
+StockSights=default
 ; How far, in metres, leaning left or right can move the view.
 PositionLimitX=default
 ; How far, in metres, raising your head can move the view.
@@ -330,7 +343,8 @@ ToggleKey=default
 CycleTrackingModeKey=default
 ; Switches yaw between the world's up axis and the camera's own (WorldSpaceYaw).
 YawModeKey=default
-; Cycles the aim mode: sights locked, free look with a marker, true free look (TrueFreeLook, FreeLookMarker).
+; Cycles the aim mode: sights locked, free look with a marker, true free look, stock sights
+; (TrueFreeLook, FreeLookMarker, StockSights).
 TrueFreeLookKey=default
 ; Switches to the next tracker app when more than one sends to the UDP port.
 CycleTrackerSourceKey=Ctrl+Shift+J
@@ -406,6 +420,17 @@ or found it off already.
   an axis that runs the wrong way is corrected in the tracker. If yaw
   feels wrong at extreme up or down angles, toggle between horizon-locked and
   camera-local yaw with `Page Down`.
+- **The weapon is off to one side when I aim down sights.** Your head is
+  turned: the weapon stays on your aim and you are looking past it. Turn back to
+  it, or move your aim to where you are looking.
+- **I can't see down the sights, they are misaligned.** You are in one of the
+  free look modes and your head is leaned off them. Move your head back behind
+  them, or press `Insert` / `Ctrl+Shift+U` until the log says sights locked.
+- **The view swings when I raise or lower the sights.** You are in stock sights
+  with your head turned: the view goes to your aim while the sights are up and
+  back to where you are looking when they come down. Press `Insert` /
+  `Ctrl+Shift+U` for another mode if you want head tracking to carry on through
+  the aim.
 - **Reporting a crash.** `HeadTracking.log` sits next to `Fallout4.exe` and is
   rewritten from scratch on every launch. The previous launch is kept as
   `HeadTracking.prev.log`, so the session that crashed survives the relaunch

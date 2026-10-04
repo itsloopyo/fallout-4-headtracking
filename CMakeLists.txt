@@ -64,6 +64,7 @@ set(MOD_SOURCES
     src/game/game_setting.cpp
     src/game/weapon_debris.cpp
     src/game/game_state.cpp
+    src/ui/aim_marker.cpp
     src/ui/game_window.cpp
     src/ui/notification.cpp
     # RTTI vtable resolver from cameraunlock-core. It lives in the optional

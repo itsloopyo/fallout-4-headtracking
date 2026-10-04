@@ -560,6 +560,52 @@ void ImpactProjection() {
 
 }  // namespace
 
+// A plain view matrix: rows are the camera's axes, the last column the eye.
+NiMatrix44 ViewOf(const NiMatrix33& rotation, const NiPoint3& eye) {
+    NiMatrix44 m{};
+    const NiPoint3 local = rotation.WorldToLocal(eye);
+    const float t[3] = {-local.x, -local.y, -local.z};
+    for (int i = 0; i < 3; ++i) {
+        for (int j = 0; j < 3; ++j) m.entry[i][j] = rotation.entry[i][j];
+        m.entry[i][3] = t[i];
+    }
+    m.entry[3][3] = 1.0f;
+    return m;
+}
+
+void RebasedWorldToCamIsTheOtherPosesMatrix() {
+    std::printf("a worldToCam carried to another camera pose is that pose's matrix\n");
+    const NiMatrix33 tracked = NiMatrix33::FromEulerAngles(0.9f, -0.3f, 0.2f);
+    const NiMatrix33 clean = NiMatrix33::FromEulerAngles(0.55f, -0.1f, 0.0f);
+    const NiPoint3 trackedEye(120.0f, -40.0f, 96.0f);
+    const NiPoint3 cleanEye(112.5f, -31.0f, 99.0f);
+    // A projection on top, so the carry is shown to hold for more than a rigid view.
+    NiMatrix44 projected = ViewOf(tracked, trackedEye);
+    NiMatrix44 wanted = ViewOf(clean, cleanEye);
+    for (int j = 0; j < 4; ++j) {
+        projected.entry[3][j] = projected.entry[1][j];
+        wanted.entry[3][j] = wanted.entry[1][j];
+        projected.entry[0][j] *= 1.7f;
+        wanted.entry[0][j] *= 1.7f;
+    }
+    const NiMatrix44 got = RebaseWorldToCam(projected, tracked, trackedEye, clean, cleanEye);
+    bool same = true;
+    for (int i = 0; i < 4; ++i) {
+        for (int j = 0; j < 4; ++j) {
+            if (fabsf(got.entry[i][j] - wanted.entry[i][j]) > 1e-3f) same = false;
+        }
+    }
+    Check(same, "every entry matches the matrix built at the clean pose");
+    const NiMatrix44 unchanged = RebaseWorldToCam(projected, tracked, trackedEye, tracked, trackedEye);
+    bool identity = true;
+    for (int i = 0; i < 4; ++i) {
+        for (int j = 0; j < 4; ++j) {
+            if (fabsf(unchanged.entry[i][j] - projected.entry[i][j]) > 1e-3f) identity = false;
+        }
+    }
+    Check(identity, "carried to its own pose it is unchanged");
+}
+
 int main() {
     std::printf("Fallout4HeadTracking camera math tests\n"
                 "======================================\n");
@@ -572,6 +618,7 @@ int main() {
     AimProjectionMatchesPreExtraction();
     CrosshairStageOffsetMatchesPreExtraction();
     ImpactProjection();
+    RebasedWorldToCamIsTheOtherPosesMatrix();
 
     if (g_failures == 0) {
         std::printf("All tests passed!\n");

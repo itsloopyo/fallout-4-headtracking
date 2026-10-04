@@ -376,6 +376,7 @@ struct Startup {
     // True free look had no legacy setting either.
     bool true_free_look = false;
     bool free_look_marker = false;
+    bool stock_sights = false;
     std::vector<Registration> hotkeys;
 };
 
@@ -462,6 +463,7 @@ Startup FromMigration(const Config& c) {
     s.collision_release = Bits(c.lean_clamp.release_smoothing);
     s.true_free_look = c.true_free_look;
     s.free_look_marker = c.free_look_marker;
+    s.stock_sights = c.stock_sights;
     const std::pair<Action, const std::string*> lists[] = {
         {Action::Toggle, &c.toggle_key_name},
         {Action::CycleMode, &c.cycle_tracking_mode_key_name},
@@ -500,6 +502,7 @@ std::vector<std::string> StartupDifferences(const Startup& a, const Startup& b) 
     SAME(collision_release);
     SAME(true_free_look);
     SAME(free_look_marker);
+    SAME(stock_sights);
 #undef SAME
     if (a.hotkeys != b.hotkeys) out.push_back("hotkeys " + Describe(a.hotkeys) + " against " + Describe(b.hotkeys));
     return out;
@@ -583,7 +586,8 @@ const std::set<Concept>& AllRows() {
         Concept::PositionLimitYDown, Concept::PositionLimitZ,    Concept::PositionLimitZBack,
         Concept::ToggleKey,       Concept::CycleTrackingModeKey, Concept::YawModeKey,
         Concept::CollisionEnabled, Concept::CollisionReleaseSmoothing,
-        Concept::TrueFreeLook,    Concept::FreeLookMarker,       Concept::TrueFreeLookKey,
+        Concept::TrueFreeLook,    Concept::FreeLookMarker,       Concept::StockSights,
+        Concept::TrueFreeLookKey,
     };
     return all;
 }
@@ -594,7 +598,7 @@ const std::set<Concept>& AllRows() {
 std::set<Concept> UntouchedRows(const legacy::Config& c) {
     const legacy::Config d;
     std::set<Concept> rows{Concept::CollisionEnabled, Concept::CollisionReleaseSmoothing, Concept::TrueFreeLook,
-                           Concept::FreeLookMarker, Concept::TrueFreeLookKey};
+                           Concept::FreeLookMarker, Concept::StockSights, Concept::TrueFreeLookKey};
     const auto untouched = [&rows](bool same, std::initializer_list<Concept> ids) {
         if (same) rows.insert(ids);
     };
@@ -642,6 +646,7 @@ Startup OverDefaults(Startup imported, const std::set<Concept>& follows, const S
     take(Concept::CollisionReleaseSmoothing, imported.collision_release, defaults.collision_release);
     take(Concept::TrueFreeLook, imported.true_free_look, defaults.true_free_look);
     take(Concept::FreeLookMarker, imported.free_look_marker, defaults.free_look_marker);
+    take(Concept::StockSights, imported.stock_sights, defaults.stock_sights);
     const std::pair<Concept, Action> hotkeys[] = {
         {Concept::ToggleKey, Action::Toggle},
         {Concept::CycleTrackingModeKey, Action::CycleMode},
@@ -671,7 +676,7 @@ const char kSkewedDefaults[] =
     "[Smoothing]\r\nLocalSmoothing=0.5\r\nRemoteSmoothing=0.45\r\n\r\n"
     "[Position]\r\nPositionEnabled=true\r\nPositionLimitX=0.55\r\nPositionLimitY=0.45\r\n"
     "PositionLimitYDown=0.35\r\nPositionLimitZ=0.65\r\nPositionLimitZBack=0.25\r\n"
-    "CollisionEnabled=false\r\nCollisionReleaseSmoothing=0.4\r\nTrueFreeLook=true\r\nFreeLookMarker=true\r\n\r\n"
+    "CollisionEnabled=false\r\nCollisionReleaseSmoothing=0.4\r\nTrueFreeLook=true\r\nFreeLookMarker=true\r\nStockSights=true\r\n\r\n"
     "[Hotkeys]\r\nToggleKey=F8\r\nCycleTrackingModeKey=F9\r\nYawModeKey=F10\r\nTrueFreeLookKey=F11\r\n";
 
 struct MigrationTally {

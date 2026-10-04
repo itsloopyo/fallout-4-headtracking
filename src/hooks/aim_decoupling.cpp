@@ -4,6 +4,9 @@
 #include "aim_decoupling.h"
 #include "hook_slot.h"
 #include "player_hook.h"
+#include "activation_hook.h"
+#include "camera_math.h"
+#include "module_scan.h"
 #include "core/logging.h"
 #include "core/seh_guard.h"
 #include "core/vector_math.h"
@@ -283,8 +286,65 @@ std::atomic<float> g_autoAimMaxDist{0.0f};
 std::atomic<char> g_autoAimSighted{0};
 std::atomic<bool> g_autoAimSeen{false};
 
+// ---------------------------------------------------------------------------
+// WHO IS UNDER THE CROSSHAIR.
+//
+// The solver picks its actor on screen: it projects each candidate's bound
+// through the camera and keeps the one nearest the centre. That actor is what
+// the HUD names and what an aimed weapon can act on (the sights-up prompt on a
+// character). Through the head-tracked camera it is whoever the view centre is
+// on, so the prompt lit for the view and stayed dark for the sights.
+//
+// The projection takes the camera as an argument and the solver is its only
+// caller, so the player's solve is handed a private copy of the camera standing
+// where the body aims. Nothing the renderer reads is written.
+// ---------------------------------------------------------------------------
+typedef uintptr_t (__fastcall *BoundToScreen_t)(void* camera, const float* bound, float* nearPoint, float* farPoint,
+                                                float tolerance);
+BoundToScreen_t g_originalBoundToScreen = nullptr;
+HookSlot g_boundToScreenHook;
+thread_local bool t_solvingForPlayer = false;
+
+// The projection reads the camera's world rotation and translation, worldToCam
+// and the frustum, the last of them at +0x178.
+constexpr size_t kCameraBytesRead = 0x180;
+
+bool CleanCameraCopy(void* camera, uint8_t* copy) {
+    CameraRootSnapshots snap{};
+    AimReference reference;
+    if (!GetCameraRootSnapshots(snap) || snap.niCamera != reinterpret_cast<uintptr_t>(camera) ||
+        !GetAimReference(reference)) {
+        return false;
+    }
+    static std::atomic<uint64_t> s_faults{0};
+    __try {
+        std::memcpy(copy, camera, kCameraBytesRead);
+    } __except (SehAbsorbAccessViolation(GetExceptionCode(), "crosshair target camera", s_faults)) {
+        return false;
+    }
+    const uintptr_t node = reinterpret_cast<uintptr_t>(copy);
+    NiMatrix33 clean;
+    std::memcpy(clean.entry, snap.cleanNiCamWorld, sizeof(clean.entry));
+    NiMatrix44* worldToCam = reinterpret_cast<NiMatrix44*>(node + NiCameraOffsets::WorldToCam);
+    *worldToCam = RebaseWorldToCam(*worldToCam, *WorldRotationOf(node), *WorldTranslationOf(node), clean,
+                                   reference.cleanEye);
+    *WorldRotationOf(node) = clean;
+    *WorldTranslationOf(node) = reference.cleanEye;
+    return true;
+}
+
+uintptr_t __fastcall BoundToScreenHook(void* camera, const float* bound, float* nearPoint, float* farPoint,
+                                       float tolerance) {
+    alignas(16) uint8_t copy[kCameraBytesRead];
+    if (t_solvingForPlayer && CleanCameraCopy(camera, copy)) {
+        return g_originalBoundToScreen(copy, bound, nearPoint, farPoint, tolerance);
+    }
+    return g_originalBoundToScreen(camera, bound, nearPoint, farPoint, tolerance);
+}
+
 void* __fastcall AutoAimSolverHook(void* actor, float maxDist, char sighted) {
-    if (IsPlayerActor(actor)) {
+    const bool player = IsPlayerActor(actor);
+    if (player) {
         g_autoAimMaxDist.store(maxDist, std::memory_order_relaxed);
         g_autoAimSighted.store(sighted, std::memory_order_relaxed);
         g_autoAimSeen.store(true, std::memory_order_relaxed);
@@ -295,13 +355,18 @@ void* __fastcall AutoAimSolverHook(void* actor, float maxDist, char sighted) {
     // the flicker is made of. The cache it writes is instead recomputed from the
     // body's camera at the moment of firing, where the window costs nothing
     // because it happens once per shot.
-    return g_originalAutoAim(actor, maxDist, sighted);
+    const bool outer = t_solvingForPlayer;
+    t_solvingForPlayer = player;
+    void* result = g_originalAutoAim(actor, maxDist, sighted);
+    t_solvingForPlayer = outer;
+    return result;
 }
 
 void RefreshAutoAimFromBody() {
     if (!g_autoAimSeen.load(std::memory_order_relaxed)) return;
     void* player = PlayerActor();
     if (player == nullptr) return;
+    // The camera itself is clean here, so the projection takes it as it is.
     g_originalAutoAim(player, g_autoAimMaxDist.load(std::memory_order_relaxed),
                       g_autoAimSighted.load(std::memory_order_relaxed));
 }
@@ -351,6 +416,80 @@ bool InstallFirePathHook(const TextSection& text, uintptr_t moduleBase) {
     return true;
 }
 
+// How far into the solver the two projection calls sit, and how far before a
+// call its camera argument is loaded.
+constexpr size_t kSolverScanBytes = 0x800;
+constexpr size_t kArgumentWindowBytes = 0x40;
+constexpr int kMaxCallCandidates = 64;
+// mov rcx, r13: the solver keeps the camera in r13 on every build seen.
+const uint8_t kCameraIntoRcx[] = {0x49, 0x8B, 0xCD};
+
+bool LoadsCameraBefore(uintptr_t call) {
+    for (size_t back = sizeof(kCameraIntoRcx); back <= kArgumentWindowBytes; ++back) {
+        if (std::memcmp(reinterpret_cast<const void*>(call - back), kCameraIntoRcx, sizeof(kCameraIntoRcx)) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// The projection the solver calls: the one function it calls directly exactly
+// twice, each time with the camera as the first argument. 0 unless exactly one
+// function fits.
+uintptr_t FindBoundToScreen(const TextSection& text, uintptr_t solver) {
+    struct Candidate {
+        uintptr_t target;
+        int calls;
+        int withCamera;
+    };
+    Candidate candidates[kMaxCallCandidates];
+    int count = 0;
+    static std::atomic<uint64_t> s_faults{0};
+    __try {
+        for (size_t off = kArgumentWindowBytes; off + 5 <= kSolverScanBytes; ++off) {
+            const uintptr_t at = solver + off;
+            if (*reinterpret_cast<const uint8_t*>(at) != 0xE8) continue;
+            const uintptr_t target = at + 5 + *reinterpret_cast<const int32_t*>(at + 1);
+            if (target < text.start || target >= text.start + text.size) continue;
+            int index = 0;
+            while (index < count && candidates[index].target != target) ++index;
+            if (index == count) {
+                if (count == kMaxCallCandidates) return 0;
+                candidates[count++] = Candidate{target, 0, 0};
+            }
+            ++candidates[index].calls;
+            if (LoadsCameraBefore(at)) ++candidates[index].withCamera;
+        }
+    } __except (SehAbsorbAccessViolation(GetExceptionCode(), "crosshair target scan", s_faults)) {
+        return 0;
+    }
+    uintptr_t found = 0;
+    int fits = 0;
+    for (int i = 0; i < count; ++i) {
+        if (candidates[i].calls != 2 || candidates[i].withCamera != 2) continue;
+        found = candidates[i].target;
+        ++fits;
+    }
+    return fits == 1 ? found : 0;
+}
+
+// Optional: without it shots still follow the body's aim, and the character the
+// HUD names with the sights up is the one at the centre of the view.
+void InstallCrosshairTargetHook(const TextSection& text, uintptr_t moduleBase, uintptr_t solver) {
+    const uintptr_t projection = FindBoundToScreen(text, solver);
+    if (projection == 0) {
+        Log::Line("ERROR: crosshair target: the solver's screen projection was not found on this build - the"
+                  " character named under the crosshair follows the view, not the aim");
+        return;
+    }
+    Log::Line("crosshair target: screen projection at RVA 0x%llX",
+              static_cast<unsigned long long>(projection - moduleBase));
+    if (g_boundToScreenHook.Install(reinterpret_cast<void*>(projection), reinterpret_cast<void*>(&BoundToScreenHook),
+                                    reinterpret_cast<void**>(&g_originalBoundToScreen), "crosshair target")) {
+        Log::Line("crosshair target hook installed - the character under the crosshair follows the aim");
+    }
+}
+
 bool InstallAutoAimHook(const TextSection& text, uintptr_t moduleBase) {
     const char* variant = "none";
     const uintptr_t autoAimFn = FindUniquePatternEither(
@@ -364,6 +503,8 @@ bool InstallAutoAimHook(const TextSection& text, uintptr_t moduleBase) {
 
     Log::Line("auto-aim solver found at RVA 0x%llX (%s)",
               static_cast<unsigned long long>(autoAimFn - moduleBase), variant);
+    // Before the solver's own hook goes on, while its bytes are the game's.
+    InstallCrosshairTargetHook(text, moduleBase, autoAimFn);
     if (g_autoAimHook.Install(reinterpret_cast<void*>(autoAimFn),
                               reinterpret_cast<void*>(&AutoAimSolverHook),
                               reinterpret_cast<void**>(&g_originalAutoAim), "auto-aim solver")) {
@@ -374,6 +515,7 @@ bool InstallAutoAimHook(const TextSection& text, uintptr_t moduleBase) {
 }
 
 void RemoveAimDecouplingHooks() {
+    g_boundToScreenHook.Remove();
     g_autoAimHook.Remove();
     g_launchHook.Remove();
 }
