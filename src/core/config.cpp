@@ -135,7 +135,9 @@ cfg::ConfigTable<Config> MakeConfigTable() {
                 "true: write the mod's notices (tracking on or off, a mode change) to HeadTracking.log.");
     table.Local("General", "TrackThroughScopes", &Config::track_through_scopes, cfg::BoolCodec(),
                 "false: while you look through a scope that fills the screen the view is the game's own, as in the"
-                " stock sights aim mode, whichever aim mode you use for other sights. Head roll still tilts it.");
+                " stock sights aim mode, whichever aim mode you use for other sights, so the scope's reticle is"
+                " where the round goes. Head roll still tilts it. true: the view follows your head through the"
+                " scope as your aim mode says, and the reticle is then off the round.");
     table.Local("Hotkeys", "CycleTrackerSourceKey", &Config::cycle_tracker_source_key_name, cfg::HotkeyCodec(),
                 "Switches to the next tracker app when more than one sends to the UDP port.");
     return table;

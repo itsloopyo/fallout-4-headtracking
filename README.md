@@ -214,15 +214,13 @@ sights closer in modes 1 to 3, and your eye stops just behind them while the
 view goes on leaning in.
 In third person the view keeps the whole lean while you aim.
 
-Head tracking carries on through a scope that fills the screen. With your head
-off a scope's axis its own reticle is no longer where the round goes. In mode 2
-the white marker is. In stock sights the scope is the game's own, and its
-reticle is where the round goes.
-
-To keep your aim mode for other sights and still have the game's own view
-through a scope, set `TrackThroughScopes=false` in `CameraUnlock.ini`: a scope
-that fills the screen is then handled as stock sights, whichever mode you have
-picked.
+A scope that fills the screen is handled as stock sights, whichever aim mode you
+have picked: while you look through it your head stops turning and leaning the
+view, so the scope's reticle is where the round goes. Tilting your head still
+tilts the view. To have the view follow your head through such a scope as your
+aim mode says, set `TrackThroughScopes=true` in `CameraUnlock.ini`. The scope's
+reticle is then no longer where the round goes with your head off its axis; in
+mode 2 the white marker is.
 
 The view is the game's own while the Pip-Boy is up, and stays so for the half
 second the arm takes to lower. Head tracking then eases back in.
@@ -307,8 +305,8 @@ WorldSpaceYaw=default
 RotationEnabled=default
 ; true: write the mod's notices (tracking on or off, a mode change) to HeadTracking.log.
 ShowNotifications=true
-; false: while you look through a scope that fills the screen the view is the game's own, as in the stock sights aim mode, whichever aim mode you use for other sights. Head roll still tilts it.
-TrackThroughScopes=true
+; false: while you look through a scope that fills the screen the view is the game's own, as in the stock sights aim mode, whichever aim mode you use for other sights, so the scope's reticle is where the round goes. Head roll still tilts it. true: the view follows your head through the scope as your aim mode says, and the reticle is then off the round.
+TrackThroughScopes=false
 
 [Smoothing]
 ; Smoothing when the tracker runs on this PC. 0 is the least, 1 the most.

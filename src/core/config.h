@@ -28,7 +28,10 @@ struct Config : cameraunlock::HeadTrackingConfig {
     }
     bool show_notifications = true;
     // false: through a scope's overlay the aim mode is stock sights, whichever mode is picked.
-    bool track_through_scopes = true;
+    // A scope that fills the screen draws its reticle at the centre of the view, so with the
+    // view following the head the reticle is not where the round goes: at 10x, a head turn of
+    // 8 degrees put it 75 pixels off.
+    bool track_through_scopes = false;
     // Ctrl+Shift+U, the chord earlier builds used, is the aim mode cycle's in every shooter.
     std::string cycle_tracker_source_key_name = "Ctrl+Shift+J";
 };
