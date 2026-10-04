@@ -82,18 +82,12 @@ NiPoint3 TrackerLeanToWorldUnits(const NiMatrix33& rootWorldRot,
 inline const cameraunlock::math::Vec3 kTrackerForward(0.0f, 0.0f, -1.0f);
 
 // The lean's split between the camera and the first-person skeleton for this frame.
-//
-// Outside free look the skeleton carries the lean across the aim whenever there is
-// one to carry it, at the hip as well as with the sights up (owner ruling of
-// 2026-10-04). The eye the round leaves from and the eye the frame is drawn from
-// are then one point across the aim, so the crosshair is the aim direction at
-// every range. With the camera carrying it at the hip the crosshair sat on the
-// impact point as seen from the leaned eye, and jumped 65 to 75 pixels each time
-// the aim crossed from something 150 units off to the background under a 15 cm
-// lean. In free look the camera keeps the lean, at the hip and through the aim.
-//
-// The skeleton is the first-person camera's: outside it the camera carries the
-// whole lean, and the handover starts again when the view comes back.
+// The skeleton carries a share only while the sights are up. At the hip the camera
+// carries all of it, so a lean never moves the aim: the crosshair stays on the same
+// point of the world and travels across the frame to stay there.
+// Sights locked is a first-person mode: outside the first-person camera the camera
+// carries the whole lean, sights up or not, and the handover starts again at the hip
+// when the view comes back to first person.
 cameraunlock::ads::LeanShares ShareLean(cameraunlock::ads::LeanHandover& handover, const cameraunlock::math::Vec3& lean,
                                         bool firstPerson, bool aiming, bool trueFreeLook, bool rigAvailable,
                                         unsigned long long nowMs);

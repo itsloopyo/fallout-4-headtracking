@@ -200,18 +200,13 @@ you pick, so it holds the next time you start the game:
    tracking. Tilting your head still tilts the view. When you lower the weapon
    the view goes back to where you are looking.
 
-Leaning carries on through the aim. In sights locked and stock sights your arms
-and weapon move with your head when you lean to the side or up and down, with
-the weapon lowered as well as with the sights up. The sights stay in front of
-your eye, your rounds leave from where your eye is, and the crosshair stays in
-the middle of your aim whatever is in front of it. Lean round a corner and you
-can hit what you can see from there. What the crosshair is on, and so what you
-can pick up, moves with you as you lean. In modes 2 and 3 the weapon stays with
-your body as you lean and your rounds leave from the weapon, so the crosshair
-sits where the round will land as seen from where your head is, and it moves
-when your aim passes from something near to something far. Leaning in brings the
-sights closer in modes 1 to 3, and your eye stops just behind them while the
-view goes on leaning in.
+Leaning carries on through the aim. In sights locked, as the sights come up,
+your arms and weapon move with your head when you lean to the side or up and
+down, so the sights stay in front of your eye, and your rounds leave from where
+your eye is. Lean round a corner with the sights up and you can hit what you can
+see from there. In modes 2 and 3 the weapon stays with your body as you lean and
+your rounds leave from the weapon. Leaning in brings the sights closer in modes
+1 to 3, and your eye stops just behind them while the view goes on leaning in.
 In third person the view keeps the whole lean while you aim.
 
 A scope that fills the screen is handled as stock sights, whichever aim mode you
