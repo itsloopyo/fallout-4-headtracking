@@ -160,6 +160,13 @@ NiMatrix44 RebaseWorldToCam(const NiMatrix44& worldToCam, const NiMatrix33& from
     return out;
 }
 
+float PoseShareAfterMenu(unsigned long long msSinceClosed) {
+    if (msSinceClosed <= kMenuCloseHoldMs) return 0.0f;
+    if (msSinceClosed >= kMenuCloseHoldMs + kMenuCloseEaseMs) return 1.0f;
+    const float t = static_cast<float>(msSinceClosed - kMenuCloseHoldMs) / static_cast<float>(kMenuCloseEaseMs);
+    return t * t * (3.0f - 2.0f * t);
+}
+
 float EaseStockSightsPose(cameraunlock::ads::AdsFade& fade, cameraunlock::ads::AimMode mode, bool sightsUp,
                           unsigned long long nowMs, float& yaw, float& pitch, float& x, float& y, float& z) {
     const float share = fade.Update(cameraunlock::ads::StockSightsEngaged(mode, sightsUp), nowMs);

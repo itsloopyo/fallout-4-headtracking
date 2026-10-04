@@ -14,4 +14,10 @@ void RecordMotionProbe(void* camera, const NiMatrix33& cleanRootWorld, const NiP
                        const NiPoint3& appliedOffset, float leanScale, float leanX, float leanY, float leanZ,
                        float yaw, float pitch, float roll);
 
+// Dev builds only: one row per aim ray in CameraUnlockAim.csv, so a crosshair that
+// jumps can be told apart: a ray that could not run, a ray that alternates between
+// two depths with the aim still, or an aim that crossed an edge.
+void RecordAimProbe(bool queried, bool hit, float distance, uint32_t filter, float ndcX, float ndcY,
+                    float directionX, float directionY, const NiPoint3& aim);
+
 } // namespace Fallout4HT

@@ -45,7 +45,9 @@ public:
     // the eye and the weapon while the sights are up, and whether the aim marker
     // is drawn. Saved to CameraUnlock.ini on each press.
     void CycleAimMode();
-    cameraunlock::ads::AimMode GetAimMode() const { return m_aimMode.load(); }
+    // The aim mode in force this frame: the one picked, or stock sights through a scope's
+    // overlay when TrackThroughScopes is off.
+    cameraunlock::ads::AimMode GetAimMode() const;
     bool IsFreeLook() const { return cameraunlock::ads::IsFreeLook(GetAimMode()); }
 
     // Step to a different tracker app when more than one is sending to the port.

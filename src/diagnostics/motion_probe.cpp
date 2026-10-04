@@ -61,4 +61,20 @@ void RecordMotionProbe(void* camera, const NiMatrix33& root, const NiPoint3& cle
     fflush(g_file);
 }
 
+void RecordAimProbe(bool queried, bool hit, float distance, uint32_t filter, float ndcX, float ndcY,
+                    float directionX, float directionY, const NiPoint3& aim) {
+    static FILE* s_file = nullptr;
+    static bool s_opened = false;
+    if (!s_opened) {
+        s_opened = true;
+        s_file = _wfsopen((GetModuleDirectoryW() + L"CameraUnlockAim.csv").c_str(), L"w", _SH_DENYNO);
+        if (s_file) fprintf(s_file, "ms,queried,hit,distance,filter,ndcX,ndcY,dirX,dirY,aimX,aimY,aimZ\n");
+    }
+    if (!s_file) return;
+    fprintf(s_file, "%llu,%d,%d,%.1f,%08X,%.5f,%.5f,%.5f,%.5f,%.5f,%.5f,%.5f\n",
+            static_cast<unsigned long long>(GetTickCount64()), queried ? 1 : 0, hit ? 1 : 0, distance, filter, ndcX,
+            ndcY, directionX, directionY, aim.x, aim.y, aim.z);
+    fflush(s_file);
+}
+
 }  // namespace Fallout4HT

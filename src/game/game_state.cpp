@@ -19,20 +19,32 @@ MenuStackCallback g_originalMenuRemoved = nullptr;
 HookSlot g_menuAddedHook;
 HookSlot g_menuRemovedHook;
 uintptr_t g_pipboyMenuVtable = 0;
+uintptr_t g_scopeMenuVtable = 0;
+std::atomic<bool> g_scopeOpen{false};
 std::atomic<bool> g_pipboyOpen{false};
+std::atomic<uint64_t> g_pipboyClosedMs{0};
 
 void __fastcall MenuAdded(void* menu) {
     if (*static_cast<uintptr_t*>(menu) == g_pipboyMenuVtable) {
         g_pipboyOpen.store(true, std::memory_order_relaxed);
         Log::Line("game state: Pip-Boy opened, head tracking suspended");
     }
+    if (*static_cast<uintptr_t*>(menu) == g_scopeMenuVtable) {
+        g_scopeOpen.store(true, std::memory_order_relaxed);
+        Log::Line("game state: scope overlay opened");
+    }
     g_originalMenuAdded(menu);
 }
 
 void __fastcall MenuRemoved(void* menu) {
     const bool pipboy = *static_cast<uintptr_t*>(menu) == g_pipboyMenuVtable;
+    if (*static_cast<uintptr_t*>(menu) == g_scopeMenuVtable) {
+        g_scopeOpen.store(false, std::memory_order_relaxed);
+        Log::Line("game state: scope overlay closed");
+    }
     g_originalMenuRemoved(menu);
     if (pipboy) {
+        g_pipboyClosedMs.store(GetTickCount64(), std::memory_order_relaxed);
         g_pipboyOpen.store(false, std::memory_order_relaxed);
         Log::Line("game state: Pip-Boy closed, head tracking follows gameplay state");
     }
@@ -47,6 +59,17 @@ bool InstallTrackingMenuGate(HMODULE module) {
     }
     g_pipboyMenuVtable = info.vtable_address;
     const auto* vtable = reinterpret_cast<const uintptr_t*>(info.vtable_address);
+
+    // GameMenuBase gives the scope overlay the same two callbacks. Without them the
+    // overlay cannot be told apart, and TrackThroughScopes=false has nothing to act on.
+    cameraunlock::memory::VtableInfo scope{};
+    if (cameraunlock::memory::FindVtableFromRTTI(module, "ScopeMenu", scope, 13) && scope.vfunc_count >= 13 &&
+        scope.vfuncs[0xB] == vtable[0xB] && scope.vfuncs[0xC] == vtable[0xC]) {
+        g_scopeMenuVtable = scope.vtable_address;
+    } else {
+        Log::Line("ERROR: scope overlay menu callbacks could not be validated - TrackThroughScopes=false will"
+                  " not take effect");
+    }
     // GameMenuBase shares these callbacks with other menus; filter by the
     // concrete vtable instead of suppressing every menu that calls them.
     if (!g_menuAddedHook.Install(reinterpret_cast<void*>(vtable[0xB]),
@@ -248,7 +271,15 @@ void GameState::Shutdown() {
     g_menuRemovedHook.Remove();
     g_menuAddedHook.Remove();
     g_pipboyOpen.store(false, std::memory_order_relaxed);
+    g_scopeOpen.store(false, std::memory_order_relaxed);
 }
+
+unsigned long long GameState::MsSinceTrackingMenuClosed() {
+    const uint64_t closed = g_pipboyClosedMs.load(std::memory_order_relaxed);
+    return closed == 0 ? ~0ull : GetTickCount64() - closed;
+}
+
+bool GameState::IsScopeOverlayOpen() { return g_scopeOpen.load(std::memory_order_relaxed); }
 
 bool GameState::IsTrackingMenuOpen() {
     return g_pipboyOpen.load(std::memory_order_relaxed);

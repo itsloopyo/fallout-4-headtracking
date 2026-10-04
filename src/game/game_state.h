@@ -31,6 +31,10 @@ public:
     static bool Initialize();
     static void Shutdown();
     static bool IsTrackingMenuOpen();
+    // Whether a scope's overlay is on screen. It does not suspend tracking.
+    static bool IsScopeOverlayOpen();
+    // Milliseconds since the Pip-Boy last closed. Very large before it ever has.
+    static unsigned long long MsSinceTrackingMenuClosed();
     // playerCamera is the PlayerCamera the engine is ticking; its current state
     // is what identifies the attack camera.
     static bool IsInGameplay(void* playerCamera);

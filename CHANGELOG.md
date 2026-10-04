@@ -24,6 +24,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Weapon debris (the game's NVIDIA FleX effect) is switched off while the mod is loaded. With it on the game can crash inside its own FleX library shortly after a save loads, with or without the mod. `bNVFlexEnable` in `Fallout4Prefs.ini` is left as you have it, so the effect is back once the mod is removed.
 
 ### Fixed
+- Closing the Pip-Boy no longer throws the view off to one side. Head tracking came straight back while the game was still lowering the arm and returning its camera, and for a third of a second it was applied at up to three and a half times your head's turn, so the arm left through the edge of the screen. It now stays off until the arm is down and eases back in.
 - The character the game names while you aim down the sights, and the prompt that comes with it, is the one your sights are on. With your head turned it was whoever sat at the centre of the view.
 - In third person the view no longer jerks back and forth while you lean and move. The check that stops a lean at a wall was being set off by the game's own camera, which trails the view while you walk, so the lean was dropped and eased back in several times a second. The same check was set off in first person by your own body and power armour. A lean now stops only for walls, floors and the rest of the level.
 - The view no longer snaps to where your body is aimed and back when the game drops below 25 frames a second or stalls for a moment, as it does while it loads the area ahead.
@@ -37,6 +38,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - With these settings at their shipped defaults the camera moves as it did before.
 
 ### Added
+- `[General] TrackThroughScopes` in `CameraUnlock.ini`. Set it to `false` and a scope that fills the screen is handled as the stock sights aim mode, whichever aim mode you have picked for other sights: the view through it is the game's own, and head roll still tilts it. It starts at `true`, which is how the mod behaved before.
 - `[Hotkeys] CycleTrackerSourceKey` in `CameraUnlock.ini`, the key list that switches to the next tracker app. It starts at `Ctrl+Shift+J` and can be changed or removed. `Ctrl+Shift+U`, the chord that did this before, now cycles the aim mode.
 - `Insert` / `Ctrl+Shift+U` (`[Hotkeys] TrueFreeLookKey`) cycles four aim modes: sights locked, free look with a marker, true free look and stock sights. The choice is saved to `[Position] TrueFreeLook` and the new `[Position] FreeLookMarker` and `[Position] StockSights` in `CameraUnlock.ini` each time you press it. In the two free look modes the lean stays on your view through the aim, the weapon stays with your body and your rounds leave from it.
 - Free look with a marker draws a small white marker where your round will land while the sights are up, through a scope that fills the screen too.

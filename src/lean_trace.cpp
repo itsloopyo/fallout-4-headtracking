@@ -220,18 +220,16 @@ cameraunlock::camera::LeanObstruction Query(void* context,
     return {true, false, 0};
 }
 
-bool AimRayHit(const NiPoint3& start, const NiPoint3& direction, float range, float& distance) {
+AimRay CastAimRay(const NiPoint3& start, const NiPoint3& direction, float range) {
     const NiPoint3 to(start.x + direction.x * range, start.y + direction.y * range, start.z + direction.z * range);
     // The round passes through the player's own body, and so does this ray. Until
     // the group is known there is no telling the player's arm from a wall.
     const uint32_t group = g_playerGroup.load(std::memory_order_relaxed);
-    if (group == 0) return false;
+    if (group == 0) return {};
     const RayResult ray = CastRay(PlayerCell(), start, to,
                                   cameraunlock::math::Vec3(direction.x, direction.y, direction.z),
                                   kProjectileChannel | (group << 16));
-    if (!ray.queried || !ray.hit) return false;
-    distance = ray.fraction * range;
-    return true;
+    return {ray.queried, ray.queried && ray.hit, ray.fraction * range, ray.filter};
 }
 
 void Reset() {

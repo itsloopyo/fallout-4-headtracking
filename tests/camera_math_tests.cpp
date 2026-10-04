@@ -606,6 +606,15 @@ void RebasedWorldToCamIsTheOtherPosesMatrix() {
     Check(identity, "carried to its own pose it is unchanged");
 }
 
+void PoseStaysOffWhileThePipBoyLowers() {
+    Check(PoseShareAfterMenu(0) == 0.0f && PoseShareAfterMenu(kMenuCloseHoldMs) == 0.0f,
+          "no pose while the Pip-Boy arm lowers");
+    Check(PoseShareAfterMenu(kMenuCloseHoldMs + kMenuCloseEaseMs / 2) == 0.5f,
+          "half the pose halfway through the ease");
+    Check(PoseShareAfterMenu(kMenuCloseHoldMs + kMenuCloseEaseMs) == 1.0f && PoseShareAfterMenu(~0ull) == 1.0f,
+          "the whole pose once the ease is over, and when the Pip-Boy has never closed");
+}
+
 int main() {
     std::printf("Fallout4HeadTracking camera math tests\n"
                 "======================================\n");
@@ -619,6 +628,7 @@ int main() {
     CrosshairStageOffsetMatchesPreExtraction();
     ImpactProjection();
     RebasedWorldToCamIsTheOtherPosesMatrix();
+    PoseStaysOffWhileThePipBoyLowers();
 
     if (g_failures == 0) {
         std::printf("All tests passed!\n");

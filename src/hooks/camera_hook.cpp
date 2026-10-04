@@ -239,8 +239,9 @@ void PlaceAimPoint(CameraRootSnapshots& snapshot) {
     const NiPoint3 aim(snapshot.cleanNiCamWorld[0][0], snapshot.cleanNiCamWorld[0][1], snapshot.cleanNiCamWorld[0][2]);
     const float directionX = snapshot.aimNdcX;
     const float directionY = snapshot.aimNdcY;
-    float distance = 0.0f;
-    const bool hit = lean_trace::AimRayHit(cleanEye, aim, kAimRayRangeUnits, distance);
+    const lean_trace::AimRay ray = lean_trace::CastAimRay(cleanEye, aim, kAimRayRangeUnits);
+    const bool hit = ray.hit;
+    const float distance = ray.distance;
     if (hit) {
         NiMatrix33 tracked;
         std::memcpy(tracked.entry, snapshot.trackedNiCamWorld, sizeof(tracked.entry));
@@ -254,6 +255,10 @@ void PlaceAimPoint(CameraRootSnapshots& snapshot) {
             snapshot.aimNdcY = projected.ndcY;
         }
     }
+#if FALLOUT4_DEV_HOTKEYS
+    RecordAimProbe(ray.queried, ray.hit, ray.distance, ray.filter, snapshot.aimNdcX, snapshot.aimNdcY, directionX,
+                   directionY, aim);
+#endif
     static uint64_t s_lastLogMs = 0;
     const uint64_t nowMs = GetTickCount64();
     if (nowMs - s_lastLogMs >= kAdsSampleIntervalMs) {
@@ -411,6 +416,16 @@ void __fastcall PlayerCameraUpdateHook(void* thisCamera) {
         haveRotation = mod.GetProcessedRotation(yaw, pitch, roll);
         hasPosition = mod.GetPositionOffset(posX, posY, posZ);
         worldSpaceYaw = mod.IsWorldSpaceYaw();
+
+        const float afterMenu = PoseShareAfterMenu(GameState::MsSinceTrackingMenuClosed());
+        if (afterMenu != 1.0f) {
+            yaw *= afterMenu;
+            pitch *= afterMenu;
+            roll *= afterMenu;
+            posX *= afterMenu;
+            posY *= afterMenu;
+            posZ *= afterMenu;
+        }
 
         // Before the zoom factor, the lean split and everything downstream of
         // them, so all of it works from the pose that is applied.

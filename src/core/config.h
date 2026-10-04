@@ -27,6 +27,8 @@ struct Config : cameraunlock::HeadTrackingConfig {
         lean_clamp.skin = 10.0f;
     }
     bool show_notifications = true;
+    // false: through a scope's overlay the aim mode is stock sights, whichever mode is picked.
+    bool track_through_scopes = true;
     // Ctrl+Shift+U, the chord earlier builds used, is the aim mode cycle's in every shooter.
     std::string cycle_tracker_source_key_name = "Ctrl+Shift+J";
 };

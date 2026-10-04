@@ -2,6 +2,7 @@
 
 #include "pch.h"
 #include "mod.h"
+#include "game/game_state.h"
 #include "logging.h"
 #include "path_utils.h"
 #include "session_end.h"
@@ -393,6 +394,13 @@ void Mod::CycleTrackerSource() {
     m_udpReceiver.CycleSource();
     Log::Line("cycling to the next tracker source");
     Notify("Switching tracker source");
+}
+
+cameraunlock::ads::AimMode Mod::GetAimMode() const {
+    if (!m_config.track_through_scopes && GameState::IsScopeOverlayOpen()) {
+        return cameraunlock::ads::AimMode::StockSights;
+    }
+    return m_aimMode.load();
 }
 
 bool Mod::GetProcessedRotation(float& yaw, float& pitch, float& roll) {

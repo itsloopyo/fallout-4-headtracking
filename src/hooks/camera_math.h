@@ -97,6 +97,17 @@ cameraunlock::ads::LeanShares ShareLean(cameraunlock::ads::LeanHandover& handove
 NiMatrix44 RebaseWorldToCam(const NiMatrix44& worldToCam, const NiMatrix33& from, const NiPoint3& fromEye,
                             const NiMatrix33& to, const NiPoint3& toEye);
 
+// The share of the head pose applied after the Pip-Boy closes. The game spends
+// about half a second lowering the arm: its camera travels back from the Pip-Boy
+// (the eye 33 units behind and 3 below where it settles) and its field of view
+// swings through values that read as a zoom of up to 3.5. A pose put straight
+// back on, scaled by that, threw the view 35 degrees off for a third of a second
+// and the arm left through the top of the frame. So the pose stays off while the
+// arm lowers, then eases back in.
+constexpr unsigned long long kMenuCloseHoldMs = 500;
+constexpr unsigned long long kMenuCloseEaseMs = 300;
+float PoseShareAfterMenu(unsigned long long msSinceClosed);
+
 // Stock sights: scales yaw, pitch and the lean by the share of the pose that reaches the
 // view, 1 at the hip and 0 with the sights up, and returns that share. Roll is not taken,
 // so a head tilt stays at every stage. In the other three modes the share is 1. `sightsUp`
