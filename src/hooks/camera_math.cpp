@@ -131,7 +131,10 @@ cameraunlock::ads::LeanShares ShareLean(cameraunlock::ads::LeanHandover& handove
         handover.Stop();
         return cameraunlock::ads::LeanShares{lean, cameraunlock::math::Vec3()};
     }
-    return handover.Update(lean, kTrackerForward, aiming, trueFreeLook, rigAvailable, nowMs);
+    // With a rig to carry it, the lean across the aim is on the rig at the hip as well
+    // as with the sights up, so the handover is held where the sights would put it.
+    // With none, it eases out on the sights, as the handover does for a seat.
+    return handover.Update(lean, kTrackerForward, rigAvailable || aiming, trueFreeLook, rigAvailable, nowMs);
 }
 
 NiMatrix44 RebaseWorldToCam(const NiMatrix44& worldToCam, const NiMatrix33& from, const NiPoint3& fromEye,

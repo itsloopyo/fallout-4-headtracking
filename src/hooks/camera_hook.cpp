@@ -69,19 +69,15 @@ void PublishRenderPose(const RenderPose& pose, bool haveRotation) {
 
 // The lean while aiming down sights (the shooter-ads-handling skill).
 //
-// Sights locked, the default: as the sights come up the lean is handed over from
-// the camera to the first-person skeleton, the rig the eye, the arms, the weapon
-// and its projectile node all hang off, so the sights stay in front of the eye
-// and the round leaves from where the eye is. At the hip the camera carries it
-// all, and the first-person pass, which draws from the eye the skeleton gives it,
-// keeps the weapon where it is in the frame.
+// Sights locked, the default, and stock sights: the lean across the aim is
+// carried on the first-person skeleton, the rig the eye, the arms, the weapon and
+// its projectile node all hang off, at the hip and with the sights up. The
+// weapon comes with the eye, the sights stay in front of it, and the round
+// leaves from where the eye is.
 //
-// Free look, with a marker or without: the camera keeps the whole lean through
-// the aim and the skeleton is left where the game puts it, so the round leaves
-// from the body. The first-person pass draws the arms and weapon from the
-// skeleton's own eye, which neither the camera's lean nor anything written to
-// the skeleton after the camera update reaches, so the weapon keeps its place in
-// the frame in every mode.
+// Free look, with a marker or without: the camera keeps the whole lean and the
+// skeleton is left where the game puts it, so the round leaves from the body and
+// the weapon, drawn from the leaned eye, stays behind.
 //
 // In every mode the lean along the aim stays on the camera.
 //
@@ -136,11 +132,11 @@ void ReportAds(bool aiming, bool firstPerson, bool haveRig, bool freeLook, const
     if (!g_lastAdsReport.valid || now.aiming != g_lastAdsReport.aiming ||
         now.firstPerson != g_lastAdsReport.firstPerson || now.haveRig != g_lastAdsReport.haveRig ||
         now.freeLook != g_lastAdsReport.freeLook) {
-        const char* what = !aiming      ? "sights down: the lean moves the view"
-                           : !firstPerson ? "sights up outside first person: the camera keeps the whole lean"
-                           : freeLook    ? "sights up, free look: the camera keeps the whole lean"
-                           : haveRig     ? "sights up, sights locked: the lean is carried on the first-person skeleton"
-                                         : "sights up with no first-person skeleton: the lean eases out";
+        const char* what = !firstPerson ? "outside first person: the camera keeps the whole lean"
+                           : freeLook    ? "free look: the camera keeps the whole lean"
+                           : haveRig     ? "the lean across the aim is carried on the first-person skeleton"
+                           : aiming      ? "sights up with no first-person skeleton: the lean eases out"
+                                         : "no first-person skeleton: the lean moves the view";
         Log::Line("ADS: %s", what);
         g_lastAdsReport = now;
     }

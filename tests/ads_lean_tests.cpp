@@ -207,6 +207,28 @@ void ThirdPersonKeepsTheWholeLeanWhileAiming() {
           "back in first person the rig carries the lean across the aim again");
 }
 
+void TheRigCarriesTheLeanAtTheHip() {
+    std::printf("at the hip, outside free look, the rig carries the lean across the aim\n");
+    LeanHandover locked;
+    ShareLean(locked, kLean, true, false, false, true, 0);
+    const LeanShares hip = ShareLean(locked, kLean, true, false, false, true, kSettledMs);
+    Check(Near(World(hip.rig), World(kAcross)), "the rig carries the lean across the aim with the sights down");
+    Check(Near(World(hip.camera), World(kAlong)), "the camera keeps only the lean along the aim");
+    const LeanShares raised = ShareLean(locked, kLean, true, true, false, true, kSettledMs + 1);
+    Check(Near(World(raised.rig), World(hip.rig)), "raising the sights moves nothing between the two");
+
+    LeanHandover freeLook;
+    ShareLean(freeLook, kLean, true, false, true, true, 0);
+    const LeanShares free = ShareLean(freeLook, kLean, true, false, true, true, kSettledMs);
+    Check(IsZero(free.rig) && Near(World(free.camera), World(kLean)), "in free look the camera keeps the whole lean");
+
+    LeanHandover noRig;
+    ShareLean(noRig, kLean, true, false, false, false, 0);
+    const LeanShares bare = ShareLean(noRig, kLean, true, false, false, false, kSettledMs);
+    Check(IsZero(bare.rig) && Near(World(bare.camera), World(kLean)),
+          "with no skeleton to carry it the camera keeps the whole lean at the hip");
+}
+
 void StoppingReleasesTheRig() {
     std::printf("sights down, position off and suspend all release the rig\n");
     for (const char* why : {"position off", "suspend"}) {
@@ -479,6 +501,7 @@ int main() {
     TrueFreeLookKeepsTheLeanOnTheCamera();
     NoRigEasesTheLeanAcrossTheAimOut();
     ThirdPersonKeepsTheWholeLeanWhileAiming();
+    TheRigCarriesTheLeanAtTheHip();
     StoppingReleasesTheRig();
     RepeatTicksReplaceTheRigWrite();
     TheTwoFreeLookModesShareOneLean();
